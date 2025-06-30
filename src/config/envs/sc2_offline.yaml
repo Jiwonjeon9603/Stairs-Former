@@ -31,15 +31,25 @@ env_args:
   heuristic_rest: False
   debug: False
 
+# test_greedy: True
+# test_nepisode: 32
+# test_interval: 500
+# log_interval: 500
+# runner_log_interval: 500
+# learner_log_interval: 500
+
+# save_model_interval: 50000
+# t_max: 35000
+
 test_greedy: True
 test_nepisode: 32
-test_interval: 500
-log_interval: 500
-runner_log_interval: 500
-learner_log_interval: 500
+test_interval: 10000
+log_interval: 10000
+runner_log_interval: 10000
+learner_log_interval: 10000
+save_model_interval: 1050000
+t_max: 10050000
 
-save_model_interval: 50000
-t_max: 35000
 
 # offline dataset
 offline_data_folder: "dataset"

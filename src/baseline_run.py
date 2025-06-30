@@ -59,7 +59,8 @@ def run(_run, _config, _log):
 
     alg_name = "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    wandb.init(project="Transfer-single", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + alg_name)
+    wandb.init(project="0630-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
+    # wandb.init(project="0630-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_To_" + alg_name)
 
 
     # Run and train
@@ -244,7 +245,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                 else:
                     log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
                 
-                wandb.log({"battle_won_mean": log_battle_won_mean}, step=t_env)
+                wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
             
 
 def run_sequential(args, logger):

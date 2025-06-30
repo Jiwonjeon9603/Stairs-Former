@@ -1,6 +1,4 @@
 # ----- marine battle setting config -----
-
-# get env information
 env: "sc2"
 # get task information
 task: "Stalker-Zealot"
@@ -21,4 +19,3 @@ pretrain_tasks: ["2s3z"]
 pretrain_tasks_data_quality: {
     "2s3z": "medium",
 }
-

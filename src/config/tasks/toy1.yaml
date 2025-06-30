@@ -1,4 +1,3 @@
-# ----- marine battle setting config -----
 
 # get env information
 env: "sc2"
@@ -6,18 +5,18 @@ env: "sc2"
 task: "Marine"
 # define train tasks and test tasks
 
-train_tasks: ["9m_vs_10m"]
+train_tasks: ["3m"]
 train_tasks_data_quality: {
-    "9m_vs_10m": "medium",
+    "3m": "expert",
 }
 
 
-test_tasks: ["9m_vs_10m"]
+test_tasks: ["3m"]
 test_tasks_data_quality: {
 }
 
 
-pretrain_tasks: ["9m_vs_10m"]
+pretrain_tasks: ["3m"]
 pretrain_tasks_data_quality: {
-    "9m_vs_10m": "medium",
+    "3m": "expert",
 }
