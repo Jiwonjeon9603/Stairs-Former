@@ -59,7 +59,7 @@ def run(_run, _config, _log):
 
     alg_name = "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    wandb.init(project="0630-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
+    wandb.init(project="0630-test", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
     # wandb.init(project="0630-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_To_" + alg_name)
 
 
@@ -163,14 +163,15 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
     n_test_runs = max(1, main_args.test_nepisode // batch_size_run)
     test_start_time = time.time()
     test_time_total += time.time() - test_start_time
-
+    
     while t_env < t_max:
         # shuffle tasks
         np.random.shuffle(train_tasks)
         # train each task
         for task in train_tasks:
             episode_sample = task2offlinedata[task].sample(batch_size_train)
-
+            filled_sample = episode_sample["filled"].cuda()
+            t_env += int(filled_sample.sum().to("cpu"))
             if episode_sample.device != task2args[task].device:
                 episode_sample.to(task2args[task].device)
 
@@ -184,8 +185,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             
             if terminated is not None and terminated:
                 break
-
-            t_env += 1
+            # t_env += 1
             episode += batch_size_run
 
         if terminated is not None and terminated:
@@ -246,7 +246,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                     log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
                 
                 wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
-            
+
 
 def run_sequential(args, logger):
     # Init runner so we can get env info
