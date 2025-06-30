@@ -5,7 +5,7 @@ epsilon_start: 1.0
 epsilon_finish: 0.05
 epsilon_anneal_time: 50000
 
-# runner: "mt_episode"
+
 runner: "mt_episode"
 batch_size_run: 1
 
@@ -13,7 +13,7 @@ buffer_size: 5000
 batch_size: 128
 
 # update the target network every _ steps
-target_update_interval: 200
+target_update_interval: 80
 
 # use the Q_Learner to train
 agent_output_type: "q"
