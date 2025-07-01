@@ -57,10 +57,10 @@ def run(_run, _config, _log):
     # sacred is on by default
     logger.setup_sacred(_run)
 
-    # alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
+    alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    wandb.init(project="0631-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
-    # wandb.init(project="0630-UpDeT", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + alg_name)
+    # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
+    wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + alg_name)
 
 
     # Run and train
@@ -245,9 +245,10 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                 else:
                     log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
                 
-                # wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
+                # for multi task
+                wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
                 # for singl task
-                wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
+                # wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
 
 
 def run_sequential(args, logger):
@@ -312,6 +313,7 @@ def run_sequential(args, logger):
         task2offlinedata = {}
         for task in main_args.pretrain_tasks:
             # create offline data buffer
+
             task2offlinedata[task] = OfflineBuffer(task, main_args.pretrain_tasks_data_quality[task], data_folder=main_args.offline_data_name, offline_data_size=args.offline_data_size, random_sample=args.offline_data_shuffle)
         
         test_task2offlinedata = None

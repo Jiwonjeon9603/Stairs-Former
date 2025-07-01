@@ -89,6 +89,11 @@ class UPDeTLearner:
             mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1)  # Concat over time
 
+        if self.main_args.bc:
+            b, t, n, a = mac_out.size()
+            bc_loss = (F.cross_entropy(mac_out.reshape(-1, a), batch["actions"].squeeze(-1).reshape(-1), reduction="sum") / mask.sum()) / n
+
+
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_qvals = th.gather(mac_out[:, :], dim=3, index=actions[:, :]).squeeze(3)  # Remove the last dim
 
@@ -147,7 +152,10 @@ class UPDeTLearner:
         # Normal L2 loss, take mean over actual data
         td_loss = (masked_td_error ** 2).sum() / mask[:, :-self.c].sum()
         cons_loss = masked_cons_error.sum() / mask.sum()
-        loss = td_loss + self.alpha * cons_loss
+        if self.main_args.bc:
+            loss = td_loss + bc_loss
+        else:
+            loss = td_loss + self.alpha * cons_loss
 
         # Do RL Learning
         self.optimiser.zero_grad()

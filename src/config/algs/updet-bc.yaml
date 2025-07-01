@@ -50,5 +50,5 @@ type_conservative: "norm"
 head: 1
 depth: 1
 
-bc: False
-algo_name: "Updet-m"
+bc: True
+algo_name: "Updet-bc"

@@ -188,3 +188,5 @@ cython_debug/
 /smac
 /__MACOSX
 smac/
+install_*.sh
+run*.sh
