@@ -163,15 +163,14 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
     n_test_runs = max(1, main_args.test_nepisode // batch_size_run)
     test_start_time = time.time()
     test_time_total += time.time() - test_start_time
-    
+
     while t_env < t_max:
         # shuffle tasks
         np.random.shuffle(train_tasks)
         # train each task
         for task in train_tasks:
             episode_sample = task2offlinedata[task].sample(batch_size_train)
-            filled_sample = episode_sample["filled"].cuda()
-            t_env += int(filled_sample.sum().to("cpu"))
+
             if episode_sample.device != task2args[task].device:
                 episode_sample.to(task2args[task].device)
 
@@ -185,7 +184,8 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             
             if terminated is not None and terminated:
                 break
-            # t_env += 1
+
+            t_env += 1
             episode += batch_size_run
 
         if terminated is not None and terminated:
