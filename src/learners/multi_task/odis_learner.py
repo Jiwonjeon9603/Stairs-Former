@@ -284,7 +284,7 @@ class ODISLearner:
         td_loss = (masked_td_error ** 2).sum() / mask[:, :-self.c].sum()
         cons_loss = masked_cons_error.sum() / mask.sum()
         
-        if self.args.bc:
+        if self.main_args.bc:
             loss = td_loss + self.phi * dist_loss + bc_loss
         else:
             loss = td_loss + self.alpha * cons_loss + self.phi * dist_loss
