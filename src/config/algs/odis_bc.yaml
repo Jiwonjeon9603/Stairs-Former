@@ -34,7 +34,7 @@ c_step: 1
 beta: 0.001
 coef_conservative: 5.0
 coef_dist: 5.0
-pretrain_steps: 15000
+pretrain_steps: 100
 pretrain: True
 
 head: 1
@@ -44,6 +44,6 @@ depth: 1
 id_length: 4
 max_agent: 15
 
-bc: False
+bc: True
 
-algo_name: "ODIS"
+algo_name: "ODIS_BC"

@@ -88,10 +88,10 @@ class UPDeTLearner:
             agent_outs = self.mac.forward(batch, t=t, task=task)
             mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1)  # Concat over time
-
+        
         if self.main_args.bc:
             b, t, n, a = mac_out.size()
-            bc_loss = (F.cross_entropy(mac_out.reshape(-1, a), batch["actions"].squeeze(-1).reshape(-1), reduction="sum") / mask.sum()) / n
+            bc_loss = (F.cross_entropy(mac_out.reshape(-1, a), actions.squeeze(-1).reshape(-1), reduction="sum") / mask.sum()) / n
 
 
         # Pick the Q-Values for the actions taken by each agent

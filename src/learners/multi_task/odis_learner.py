@@ -197,8 +197,13 @@ class ODISLearner:
         #### representation
         mac_out_obs = []
         mac_out = []
+        if self.main_args.bc:
+            bc_mac_out = []
         self.mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
+            if self.main_args.bc:
+                bc_mac_outs = self.mac.forward(batch, t=t, task=task)
+                bc_mac_out.append(bc_mac_outs)
             agent_outs, pri_outs = self.mac.forward_both(batch, t=t, task=task)
             mac_out.append(agent_outs)
             mac_out_obs.append(pri_outs)
@@ -208,7 +213,10 @@ class ODISLearner:
         mac_out_obs = th.stack(mac_out_obs, dim=1)  # Concat over time
         dist_loss = F.cross_entropy(mac_out_obs.reshape(-1, self.skill_dim),
                                     actions.reshape(-1), reduction="sum") / mask.sum() / n_agents
-
+        if self.main_args.bc:
+            bc_mac_out = th.stack(bc_mac_out, dim=1)
+            b, t, n, a = bc_mac_out.size()
+            bc_loss = (F.cross_entropy(bc_mac_out.reshape(-1, a), batch["actions"].squeeze(-1).reshape(-1), reduction="sum") / mask.sum()) / n
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_qvals = th.gather(mac_out[:, :], dim=3, index=actions[:, :]).squeeze(3)  # Remove the last dim
 
@@ -275,7 +283,11 @@ class ODISLearner:
         # Normal L2 loss, take mean over actual data
         td_loss = (masked_td_error ** 2).sum() / mask[:, :-self.c].sum()
         cons_loss = masked_cons_error.sum() / mask.sum()
-        loss = td_loss + self.alpha * cons_loss + self.phi * dist_loss
+        
+        if self.args.bc:
+            loss = td_loss + self.phi * dist_loss + bc_loss
+        else:
+            loss = td_loss + self.alpha * cons_loss + self.phi * dist_loss
 
         # Do RL Learning
         self.mac.agent.encoder.requires_grad_(False)
