@@ -59,7 +59,7 @@ class UPDeTMAC:
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
         # task_repre = self.get_task_repres(task, require_grad=False)
         # task_repre = task_repre.repeat(bs, 1)
-        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task)
+        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, test_mode)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":

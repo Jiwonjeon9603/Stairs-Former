@@ -60,7 +60,12 @@ def run(_run, _config, _log):
     alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
     # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
-    wandb.init(project="0631-UpDeT-multi-All", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + alg_name)
+    
+    if args.algo_name == "Updet-bc":
+        algorithm_name = args.algo_name + "_drop_" + str(args.token_dropout)
+    else:
+        algorithm_name = args.algo_name
+    wandb.init(project="0631-UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
 
 
     # Run and train

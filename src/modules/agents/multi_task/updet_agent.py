@@ -42,6 +42,7 @@ class UPDeTAgent(nn.Module):
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim)
         # self.skill_value = nn.Linear(self.skill_dim, self.entity_embed_dim)
 
+        self.token_dropout = args.token_dropout
         self.transformer = Transformer(self.entity_embed_dim, args.head, args.depth, self.entity_embed_dim)
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
@@ -50,7 +51,7 @@ class UPDeTAgent(nn.Module):
         # make hidden states on the same device as model
         return self.q_skill.weight.new(1, self.args.entity_embed_dim).zero_()
 
-    def forward(self, inputs, hidden_state, task):
+    def forward(self, inputs, hidden_state, task, test_mode=False):
         hidden_state = hidden_state.view(-1, 1, self.entity_embed_dim)
         # get decomposer, last_action_shape and n_agents of this specific task
         task_decomposer = self.task2decomposer[task]
@@ -67,6 +68,9 @@ class UPDeTAgent(nn.Module):
         own_obs, enemy_feats, ally_feats = task_decomposer.decompose_obs(
             obs_inputs)  # own_obs: [bs*self.n_agents, own_obs_dim]
         bs = int(own_obs.shape[0] / task_n_agents)
+
+
+######################################### Agent id input, compact action states ????? #########################################
 
         # embed agent_id inputs and decompose last_action_inputs
         agent_id_inputs = [
@@ -94,7 +98,22 @@ class UPDeTAgent(nn.Module):
         history_hidden = hidden_state
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
-        outputs = self.transformer(total_hidden, None)
+        
+        hb, ht, hd = total_hidden.size()
+        token_mask = th.ones(hb, ht, ht).to(own_obs.device)
+        
+        rand_mask = (th.rand(hb, ht-2) < 1 - self.token_dropout).float()
+        rand_mask = rand_mask.unsqueeze(1).to(own_obs.device)
+        
+        token_mask[:, :, 1:-1] *= rand_mask
+
+        if self.token_dropout != 0:
+            if not test_mode:
+                outputs = self.transformer(total_hidden, token_mask)
+            else:
+                outputs = self.transformer(total_hidden, None)
+        else:
+            outputs = self.transformer(total_hidden, None)
 
         h = outputs[:, -1:, :]
         base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)

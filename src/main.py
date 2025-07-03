@@ -154,7 +154,7 @@ if __name__ == '__main__':
     #         assert False, "default.yaml error: {}".format(exc)
 
     # with open(
-    #     os.path.join(os.path.dirname(__file__), "config/algs", "odis.yaml"), "r"
+    #     os.path.join(os.path.dirname(__file__), "config/algs", "updet-bc.yaml"), "r"
     # ) as f:
     #     try:
     #         alg_config = yaml.full_load(f)
