@@ -163,7 +163,7 @@ if __name__ == '__main__':
 
     
     # with open(
-    #     os.path.join(os.path.dirname(__file__), "config/tasks", "toy0.yaml"), "r"
+    #     os.path.join(os.path.dirname(__file__), "config/tasks", "marine-hard-medium.yaml"), "r"
     # ) as f:
     #     try:
     #         task_config = yaml.full_load(f)

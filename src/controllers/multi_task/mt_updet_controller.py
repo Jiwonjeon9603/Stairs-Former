@@ -52,14 +52,13 @@ class UPDeTMAC:
                                                             test_mode=test_mode)
         return chosen_actions
 
-    def forward(self, ep_batch, t, task, test_mode=False):
+    def forward(self, ep_batch, t, task, token_dropout = 0, test_mode = False):
         agent_inputs = self._build_inputs(ep_batch, t, task)
         avail_actions = ep_batch["avail_actions"][:, t]
 
+        data_actions = ep_batch["actions"][:,t]
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
-        # task_repre = self.get_task_repres(task, require_grad=False)
-        # task_repre = task_repre.repeat(bs, 1)
-        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, test_mode)
+        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, data_actions, token_dropout, test_mode)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":

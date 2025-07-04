@@ -62,7 +62,7 @@ def run(_run, _config, _log):
     # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
     
     if args.algo_name == "Updet-bc":
-        algorithm_name = args.algo_name + "_drop_" + str(args.token_dropout)
+        algorithm_name = args.algo_name + "_dropV2_" + str(args.token_dropout)
     else:
         algorithm_name = args.algo_name
     wandb.init(project="0631-UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)

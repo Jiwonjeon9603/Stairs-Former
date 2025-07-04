@@ -120,7 +120,8 @@ class OfflineBufferH5():
     
     def sample(self, batch_size):
         ep_ids = np.random.choice(self.episodes_in_buffer, batch_size, replace=False)
-        episode_data = {k: th.tensor(v[ep_ids]) for k, v in self.data.items()}
+        # episode_data = {k: th.tensor(v[ep_ids]) for k, v in self.data.items()}
+        episode_data = {k: th.from_numpy(v[ep_ids]).to("cuda") for k, v in self.data.items()}
         filled = episode_data['filled']
         max_ep_t = self.max_t_filled(filled).item()
         batch_sample = OfflineSample(episode_data, batch_size, max_ep_t, device=self.device)
@@ -179,7 +180,7 @@ class OfflineBufferPickle():
 
 
 class OfflineBuffer():
-    def __init__(self, map_name, quality, data_folder=None, dataset_folder='dataset', offline_data_size=2000, device="cpu", random_sample=True):
+    def __init__(self, map_name, quality, data_folder=None, dataset_folder='dataset', offline_data_size=2000, device="cuda", random_sample=True):
         datapaths = []
         if quality == 'medium-expert':
             datapaths.append(self._load_data_sources(dataset_folder, map_name, 'medium', data_folder))
