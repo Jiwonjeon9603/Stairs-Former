@@ -65,7 +65,7 @@ def run(_run, _config, _log):
         algorithm_name = args.algo_name + "_dropV2_" + str(args.token_dropout)
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="0631-UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
+    wandb.init(project="test0631-UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
 
 
     # Run and train

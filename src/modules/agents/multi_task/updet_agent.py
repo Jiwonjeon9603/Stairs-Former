@@ -46,13 +46,21 @@ class UPDeTAgent(nn.Module):
         self.transformer = Transformer(self.entity_embed_dim, args.head, args.depth, self.entity_embed_dim)
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
+        
+        self.virtual_task = getattr(args, "virtual_task", False)
+        if self.virtual_task:
+            self.repeat_num = args.repeat_num
+            
 
     def init_hidden(self):
         # make hidden states on the same device as model
         return self.q_skill.weight.new(1, self.args.entity_embed_dim).zero_()
 
-    def forward(self, inputs, hidden_state, task, data_actions=None, token_dropout = 0, test_mode = False):
+    def forward(self, inputs, hidden_state, task, virtual_hidden_state=None, data_actions=None, token_dropout = 0, test_mode = False):
         hidden_state = hidden_state.view(-1, 1, self.entity_embed_dim)
+        
+        if not test_mode:
+            virtual_hidden_state = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
         # get decomposer, last_action_shape and n_agents of this specific task
         task_decomposer = self.task2decomposer[task]
         task_n_agents = self.task2n_agents[task]
@@ -99,6 +107,13 @@ class UPDeTAgent(nn.Module):
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
 
+        if self.virtual_task and not test_mode:
+            virtual_history = virtual_hidden_state
+            virtual_enemy = enemy_hidden.repeat_interleave(self.repeat_num, dim=1)
+            prior_virtual_ally = ally_hidden.repeat_interleave(self.repeat_num, dim=1)
+            virtual_ally = th.cat([prior_virtual_ally, ally_hidden[:,:self.repeat_num - 1,:]], dim=1)
+            virtual_total_hidden = th.cat([own_hidden, virtual_enemy, virtual_ally, virtual_history], dim=1)
+
 
         if token_dropout != 0:
             if not test_mode:
@@ -110,7 +125,6 @@ class UPDeTAgent(nn.Module):
 
                 col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
                 col_mask[:, 1:ht - 1] = col_prob
-                rand_tok_col_mask = col_mask.detach().clone()
 
                 mask_condition = data_actions_flat > 5
                 selected_idx = th.arange(hb, device=own_obs.device)[mask_condition]
@@ -121,10 +135,31 @@ class UPDeTAgent(nn.Module):
                 token_mask = mask_2d.unsqueeze(1) * mask_2d.unsqueeze(2)
 
                 outputs = self.transformer(total_hidden, token_mask)
+                
+                if self.virtual_task:
+                    hb_v, ht_v, _ = virtual_total_hidden.size()
+                    token_mask_v = th.ones(hb_v, ht_v, ht_v, device=own_obs.device)
+
+                    col_prob_v = (th.rand(hb_v, ht_v - 2, device=own_obs.device) < token_dropout)
+                    col_mask_v = th.zeros(hb_v, ht_v, dtype=th.bool, device=own_obs.device)
+                    col_mask_v[:, 1:ht_v - 1] = col_prob_v
+
+                    mask_condition_v = data_actions_flat > 5
+                    selected_idx_v = th.arange(hb_v, device=own_obs.device)[mask_condition_v]
+                    selected_cols_v = data_actions_flat[mask_condition_v] - 5
+                    col_mask_v[selected_idx_v, selected_cols_v] = False
+
+                    mask_2d_v = (~col_mask_v).float()
+                    token_mask_v = mask_2d_v.unsqueeze(1) * mask_2d_v.unsqueeze(2)
+
+                    outputs_virtual = self.transformer(virtual_total_hidden, token_mask_v)
+                    
             else:
                 outputs = self.transformer(total_hidden, None)
         else:
             outputs = self.transformer(total_hidden, None)
+            if self.virtual_task and not test_mode:
+                outputs_virtual = self.transformer(virtual_total_hidden, None)
 
         h = outputs[:, -1:, :]
         base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
@@ -143,4 +178,24 @@ class UPDeTAgent(nn.Module):
 
             q = th.cat([q_base, q_attack], dim=-1)
 
-        return q, h
+
+        if self.virtual_task and not test_mode:
+            h_v = outputs_virtual[:, -1:, :]
+            base_action_inputs_v = outputs_virtual[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
+            q_base_v = self.q_skill(base_action_inputs_v)
+
+            if task_decomposer.n_actions_no_attack == task_decomposer.n_actions:
+                q_v = q_base_v
+            else:
+                q_attack_list_v = []
+                for i in range(enemy_feats.size(0) * self.repeat_num):
+                    attack_action_inputs_v = outputs_virtual[:, 1+i, :]
+                    q_enemy_v = self.q_skill(attack_action_inputs_v)
+                    q_enemy_mean_v = th.mean(q_enemy_v, 1, True)
+                    q_attack_list_v.append(q_enemy_mean_v)
+                q_attack_v = th.stack(q_attack_list_v, dim=1).squeeze()
+                q_v = th.cat([q_base_v, q_attack_v], dim=-1)    
+            return q, h, q_v, h_v
+        
+        else:
+            return q, h

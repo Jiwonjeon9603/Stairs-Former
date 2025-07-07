@@ -38,6 +38,7 @@ class UPDeTMAC:
         self._build_agents(task2input_shape_info)
 
         self.hidden_states = None
+        self.virtual_hidden_states = None
         self.hidden_states_enc = None
         self.hidden_states_dec = None
         self.skill = None
@@ -58,10 +59,17 @@ class UPDeTMAC:
 
         data_actions = ep_batch["actions"][:,t]
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
-        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, data_actions, token_dropout, test_mode)
+        
+        if self.main_args.virtual_task:
+            if test_mode:
+                agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
+            else:
+                agent_outs, self.hidden_states, virtual_agent_outs, self.virtual_hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
+        else:
+            agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, data_actions, token_dropout, test_mode)
 
         # Softmax the agent outputs if they're policy logits
-        if self.agent_output_type == "pi_logits":
+        if self.agent_output_type == "pi_logits": ### Only in COMA
 
             if getattr(self.main_args, "mask_before_softmax", True):
                 # Make the logits for unavailable actions very negative to minimise their affect on the softmax
@@ -82,14 +90,21 @@ class UPDeTMAC:
                 if getattr(self.main_args, "mask_before_softmax", True):
                     # Zero out the unavailable actions
                     agent_outs[reshaped_avail_actions == 0] = 0.0
-
-        return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
+        
+        if self.main_args.virtual_task and not test_mode:
+            return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), \
+                virtual_agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1).repeat_interleave(self.main_args.repeat_num, dim=1)
+        else:
+            return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
 
     def init_hidden(self, batch_size, task):
         # we always know we are in which task when do init_hidden
         n_agents = self.task2n_agents[task]
-        hidden_states = self.agent.init_hidden()
+        hidden_states = self.agent.init_hidden()   
         self.hidden_states = hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
+        if self.main_args.virtual_task:
+            virtual_hidden_states = self.agent.init_hidden()   
+            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
 
     def parameters(self):
         return self.agent.parameters()

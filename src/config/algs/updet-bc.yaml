@@ -53,4 +53,9 @@ depth: 1
 token_dropout: 0.1
 
 bc: True
+virtual_task: True
+repeat_num: 2
+
+virtual_lam: 0.2
+
 algo_name: "Updet-bc"
