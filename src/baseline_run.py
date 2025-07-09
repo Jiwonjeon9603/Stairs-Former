@@ -65,7 +65,7 @@ def run(_run, _config, _log):
         algorithm_name = args.algo_name + "_dropV3_lam_vir_" + str(args.virtual_lam)
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="0631-UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
+    wandb.init(project="UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
 
 
     # Run and train
@@ -189,10 +189,9 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             
             if terminated is not None and terminated:
                 break
-
-            t_env += 1
             episode += batch_size_run
-
+        t_env += len(train_tasks)
+        
         if terminated is not None and terminated:
             logger.console_logger.info(f"Terminate training by the learner at t_env = {t_env}. Finish training.")
             break
@@ -243,17 +242,29 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
+            max_log_len = max([len(v) for k,v in logger.stats.items()])
+            
+            wandb.log(
+                {
+                    "time step": t_env / (len(train_tasks)),
+                    **{
+                        f"{k}": v[-1][1]
+                        for k,v in logger.stats.items()
+                        if len(v) == max_log_len
+                    }
+                }
+            )
 
-            for test in main_args.test_tasks:
-                if f"{test}/test_battle_won_mean" in logger.stats.keys():
-                    log_battle_won_mean = logger.stats[f"{test}/test_battle_won_mean"][-1][-1]
-                else:
-                    log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
+            # for test in main_args.test_tasks:
+            #     if f"{test}/test_battle_won_mean" in logger.stats.keys():
+            #         log_battle_won_mean = logger.stats[f"{test}/test_battle_won_mean"][-1][-1]
+            #     else:
+            #         log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
                 
-                # for multi task
-                wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
-                # for singl task
-                # wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
+            #     # for multi task
+            #     wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
+            #     # for singl task
+            #     # wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
 
 
 def run_sequential(args, logger):

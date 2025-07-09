@@ -74,7 +74,7 @@ class SC2Decomposer:
         self.n_obs_height = 9
 
         # Actions
-        self.n_actions_no_attack = 6
+        self.n_actions_no_attack = 6  ## Move + stop + no-op (고정)
         self.n_actions_move = 4
         self.n_actions = self.n_actions_no_attack + self.n_enemies
 
@@ -183,6 +183,8 @@ class SC2Decomposer:
         own_obs = th.cat([move_feats, own_feats], dim=-1)
         
         return own_obs, enemy_feats, ally_feats
+
+
 
     def decompose_action_info(self, action_info):
         """

@@ -97,19 +97,28 @@ class UPDeTLearner:
                 agent_outs = self.mac.forward(batch, t=t, task=task, token_dropout=self.main_args.token_dropout)
                 mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1)  # Concat over time
+        
         if self.virtual_task:
             virtual_mac_out = th.stack(virtual_mac_out, dim=1)
+            
+            vb, vt, vn, va = virtual_mac_out.size()
+            virtual_rewards = rewards[:vb]
+            virtual_actions = actions[:vb]
+            virtual_terminated = terminated[:vb]
+            virtual_mask = mask[:vb]
+            virtual_avail_actions = F.pad(avail_actions[:vb], pad=(0, va - avail_actions.shape[-1]))
+            
         
         if self.main_args.bc:
             b, t, n, a = mac_out.size()
             bc_loss = (F.cross_entropy(mac_out.reshape(-1, a), actions.squeeze(-1).reshape(-1), reduction="sum") / mask.sum()) / n
 
-
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_qvals = th.gather(mac_out[:, :], dim=3, index=actions[:, :]).squeeze(3)  # Remove the last dim
 
         if self.virtual_task:
-            virtual_chosen_action_qvals = th.gather(virtual_mac_out[:, :], dim=3, index=actions.repeat_interleave(self.main_args.repeat_num, dim=2)[:, :]).squeeze(3)
+            virtual_bc_loss = (F.cross_entropy(virtual_mac_out.reshape(-1, va), virtual_actions.squeeze(-1).reshape(-1), reduction="sum") / virtual_mask.sum()) / vn
+            virtual_chosen_action_qvals = th.gather(virtual_mac_out[:, :], dim=3, index=virtual_actions[:, :]).squeeze(3)  # Remove the last dim
 
 
         # Calculate the Q-Values necessary for the target
@@ -133,9 +142,6 @@ class UPDeTLearner:
 
         if self.virtual_task:
             virtual_target_mac_out = th.stack(virtual_target_mac_out, dim=1)
-            vb, vt, na, va = virtual_target_mac_out.size()
-            virtual_avail_actions = th.cat([avail_actions.repeat_interleave(self.main_args.repeat_num, dim=2), \
-                                           th.zeros(vb, vt, na, va - avail_actions.shape[-1]).to(avail_actions.device)], dim=-1)
             virtual_target_mac_out[virtual_avail_actions[:, :] == 0] = -9999999
 
 
@@ -180,8 +186,8 @@ class UPDeTLearner:
         td_error = (chosen_action_qvals[:, :-self.c] - targets.detach())
 
         if self.virtual_task:
-            virtual_targets = rewards[:, :-self.c] + self.main_args.gamma * (
-                    1 - terminated[:, self.c - 1:-1]) * th.sum(virtual_target_max_qvals, dim=-1, keepdim=True)[:, self.c:]
+            virtual_targets = virtual_rewards[:, :-self.c] + self.main_args.gamma * (
+                    1 - virtual_terminated[:, self.c - 1:-1]) * th.sum(virtual_target_max_qvals, dim=-1, keepdim=True)[:, self.c:]
         
             virtual_td_error = (th.sum(virtual_chosen_action_qvals, dim=-1, keepdim=True)[:, :-self.c] - virtual_targets.detach())
 
@@ -198,14 +204,21 @@ class UPDeTLearner:
         # Normal L2 loss, take mean over actual data
         td_loss = (masked_td_error ** 2).sum() / mask[:, :-self.c].sum()
         cons_loss = masked_cons_error.sum() / mask.sum()
-        if self.main_args.bc:
-            loss = td_loss + bc_loss
-            if self.virtual_task:
-                masked_virtual_td_error = virtual_td_error * mask[:, :-self.c]
-                virtual_td_loss = (masked_virtual_td_error ** 2).sum() / mask[:, :-self.c].sum()
-                loss = td_loss + bc_loss + self.virtual_lam * virtual_td_loss
+        
+        if self.virtual_task:
+            virtual_mask = virtual_mask[:,:-self.c].expand_as(virtual_td_error)
+            masked_virtual_td_error = virtual_td_error * virtual_mask
+            virtual_td_loss = (masked_virtual_td_error ** 2).sum() / virtual_mask.sum()
+            virtual_loss = self.virtual_lam * (virtual_td_loss + virtual_bc_loss)
         else:
-            loss = td_loss + self.alpha * cons_loss
+            virtual_loss = 0
+        
+        
+        if self.main_args.bc:
+            loss = td_loss + bc_loss + virtual_loss
+
+        else:
+            loss = td_loss + self.alpha * cons_loss + virtual_loss
 
         # Do RL Learning
         self.optimiser.zero_grad()
@@ -226,7 +239,7 @@ class UPDeTLearner:
         if t_env - self.task2train_info[task]["log_stats_t"] >= self.task2args[task].learner_log_interval:
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/td_loss", td_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/cons_loss", cons_loss.item(), t_env)
+            self.logger.log_stat(f"{task}/bc_loss", bc_loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             mask_elems = mask.sum().item()
             self.logger.log_stat(f"{task}/td_error_abs", (masked_td_error.abs().sum().item() / mask_elems), t_env)
@@ -237,10 +250,15 @@ class UPDeTLearner:
                                              mask_elems * self.task2args[task].n_agents), t_env)
             self.task2train_info[task]["log_stats_t"] = t_env
             
-            wandb.log({f"{task}_tot_loss": loss.item()}, step=t_env)
-            wandb.log({f"{task}_bc_loss": bc_loss.item()}, step=t_env)
-            wandb.log({f"{task}_td_loss": td_loss.item()}, step=t_env)
-            wandb.log({f"{task}_virtual_loss": virtual_td_loss.item()}, step=t_env)
+            self.logger.log_stat(f"{task}/virtual_loss", virtual_loss.item(), t_env)
+            self.logger.log_stat(f"{task}/virtual_td_loss", virtual_td_loss.item(), t_env)
+            self.logger.log_stat(f"{task}/virtual_bc_loss", virtual_bc_loss.item(), t_env)
+            self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
+            
+            # wandb.log({f"{task}_tot_loss": loss.item()}, step=t_env)
+            # wandb.log({f"{task}_bc_loss": bc_loss.item()}, step=t_env)
+            # wandb.log({f"{task}_td_loss": td_loss.item()}, step=t_env)
+            # wandb.log({f"{task}_virtual_loss": virtual_td_loss.item()}, step=t_env)
             
 
     def pretrain(self, batch: EpisodeBatch, t_env: int, episode_num: int, task: str):

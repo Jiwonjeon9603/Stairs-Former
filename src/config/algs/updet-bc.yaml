@@ -54,7 +54,8 @@ token_dropout: 0.1
 
 bc: True
 virtual_task: True
-repeat_num: 2
+virtual_n_enemies: 1
+virtual_n_allies: 1
 
 virtual_lam: 0.2
 

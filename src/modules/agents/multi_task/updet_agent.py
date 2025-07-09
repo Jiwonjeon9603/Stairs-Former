@@ -48,9 +48,11 @@ class UPDeTAgent(nn.Module):
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
         
         self.virtual_task = getattr(args, "virtual_task", False)
+        
         if self.virtual_task:
-            self.repeat_num = args.repeat_num
-            
+            self.num_vally = args.virtual_n_enemies
+            self.num_venemy = args.virtual_n_enemies
+        
 
     def init_hidden(self):
         # make hidden states on the same device as model
@@ -58,9 +60,6 @@ class UPDeTAgent(nn.Module):
 
     def forward(self, inputs, hidden_state, task, virtual_hidden_state=None, data_actions=None, token_dropout = 0, test_mode = False):
         hidden_state = hidden_state.view(-1, 1, self.entity_embed_dim)
-        
-        if not test_mode:
-            virtual_hidden_state = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
         # get decomposer, last_action_shape and n_agents of this specific task
         task_decomposer = self.task2decomposer[task]
         task_n_agents = self.task2n_agents[task]
@@ -73,10 +72,8 @@ class UPDeTAgent(nn.Module):
                                                                                                           obs_dim + last_action_shape:]
 
         # decompose observation input
-        own_obs, enemy_feats, ally_feats = task_decomposer.decompose_obs(
-            obs_inputs)  # own_obs: [bs*self.n_agents, own_obs_dim]
+        own_obs, enemy_feats, ally_feats = task_decomposer.decompose_obs(obs_inputs)  # own_obs: [bs*self.n_agents, own_obs_dim]
         bs = int(own_obs.shape[0] / task_n_agents)
-
 
 ######################################### Agent id input, compact action states ????? #########################################
 
@@ -108,11 +105,32 @@ class UPDeTAgent(nn.Module):
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
 
         if self.virtual_task and not test_mode:
-            virtual_history = virtual_hidden_state
-            virtual_enemy = enemy_hidden.repeat_interleave(self.repeat_num, dim=1)
-            prior_virtual_ally = ally_hidden.repeat_interleave(self.repeat_num, dim=1)
-            virtual_ally = th.cat([prior_virtual_ally, ally_hidden[:,:self.repeat_num - 1,:]], dim=1)
-            virtual_total_hidden = th.cat([own_hidden, virtual_enemy, virtual_ally, virtual_history], dim=1)
+
+            if task == "3m":
+                num_v_enemy = 1
+                num_v_ally = 1
+            elif task == "5m_vs_6m":
+                num_v_enemy = 2
+                num_v_ally = 2
+            elif task == "9m_vs_10m":
+                num_v_enemy = 2
+                num_v_ally = 1
+            else:
+                num_v_enemy = self.num_vally
+                num_v_ally = self.num_vally
+
+            bsn = own_hidden.shape[0]
+            v_own_hidden = own_hidden[:int(bsn/2)]
+            
+            ### virtual enemy ###
+            v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/2)], enemy_hidden[int(bsn/2):][:, :num_v_enemy, :]], dim=1)
+            
+            ### virtual ally ###
+            v_ally_hidden = th.cat([ally_hidden[:int(bsn/2)], ally_hidden[int(bsn/2):][:, :num_v_ally, :]], dim=1)
+            
+            v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
+            
+            v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
 
 
         if token_dropout != 0:
@@ -137,65 +155,68 @@ class UPDeTAgent(nn.Module):
                 outputs = self.transformer(total_hidden, token_mask)
                 
                 if self.virtual_task:
-                    hb_v, ht_v, _ = virtual_total_hidden.size()
+                    hb_v, ht_v, _ = v_total_hidden.size()
                     token_mask_v = th.ones(hb_v, ht_v, ht_v, device=own_obs.device)
 
                     col_prob_v = (th.rand(hb_v, ht_v - 2, device=own_obs.device) < token_dropout)
                     col_mask_v = th.zeros(hb_v, ht_v, dtype=th.bool, device=own_obs.device)
                     col_mask_v[:, 1:ht_v - 1] = col_prob_v
-
-                    mask_condition_v = data_actions_flat > 5
+                    
+                    virtual_data_actions_flat = data_actions_flat[:int(bsn/2)]
+                    
+                    mask_condition_v = virtual_data_actions_flat[:int(bsn/2)] > 5
                     selected_idx_v = th.arange(hb_v, device=own_obs.device)[mask_condition_v]
-                    selected_cols_v = data_actions_flat[mask_condition_v] - 5
+                    selected_cols_v = virtual_data_actions_flat[mask_condition_v] - 5
                     col_mask_v[selected_idx_v, selected_cols_v] = False
 
                     mask_2d_v = (~col_mask_v).float()
                     token_mask_v = mask_2d_v.unsqueeze(1) * mask_2d_v.unsqueeze(2)
 
-                    outputs_virtual = self.transformer(virtual_total_hidden, token_mask_v)
+                    outputs_virtual = self.transformer(v_total_hidden, token_mask_v)
                     
             else:
                 outputs = self.transformer(total_hidden, None)
         else:
             outputs = self.transformer(total_hidden, None)
             if self.virtual_task and not test_mode:
-                outputs_virtual = self.transformer(virtual_total_hidden, None)
+                outputs_virtual = self.transformer(v_total_hidden, None)
 
         h = outputs[:, -1:, :]
-        base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
-        q_base = self.q_skill(base_action_inputs)
+        # base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
+        # q_base = self.q_skill(base_action_inputs)  # q_base = 6
+
+        q_all = self.q_skill(outputs)
+        q_base = q_all[:, 0, :]
+        q_attack = th.mean(q_all[:, 1:enemy_feats.size(0)+1, :], -1)
+        q = th.cat([q_base, q_attack], dim=-1)
 
         if task_decomposer.n_actions_no_attack == task_decomposer.n_actions:
             q = q_base
-        else:
-            q_attack_list = []
-            for i in range(enemy_feats.size(0)):
-                attack_action_inputs = outputs[:, 1+i, :]
-                q_enemy = self.q_skill(attack_action_inputs)
-                q_enemy_mean = th.mean(q_enemy, 1, True)
-                q_attack_list.append(q_enemy_mean)
-            q_attack = th.stack(q_attack_list, dim=1).squeeze()
+        # else:
+        #     q_attack_list = []
+        #     for i in range(enemy_feats.size(0)):
+        #         attack_action_inputs = outputs[:, 1+i, :]
+        #         q_enemy = self.q_skill(attack_action_inputs)
+        #         q_enemy_mean = th.mean(q_enemy, 1, True)
+        #         q_attack_list.append(q_enemy_mean)
+        #     q_attack = th.stack(q_attack_list, dim=1).squeeze()
 
-            q = th.cat([q_base, q_attack], dim=-1)
-
-
+        #     q = th.cat([q_base, q_attack], dim=-1)
+        
+        
         if self.virtual_task and not test_mode:
             h_v = outputs_virtual[:, -1:, :]
-            base_action_inputs_v = outputs_virtual[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
-            q_base_v = self.q_skill(base_action_inputs_v)
+            
+            
+            q_all_v = self.q_skill(outputs_virtual)
+            q_base_v = q_all_v[:, 0, :]
+            q_attack_v = th.mean(q_all_v[:, 1 :enemy_feats.size(0) + num_v_enemy + 1, :], -1)
+            q_v = th.cat([q_base_v, q_attack_v], dim=-1)
 
             if task_decomposer.n_actions_no_attack == task_decomposer.n_actions:
-                q_v = q_base_v
-            else:
-                q_attack_list_v = []
-                for i in range(enemy_feats.size(0) * self.repeat_num):
-                    attack_action_inputs_v = outputs_virtual[:, 1+i, :]
-                    q_enemy_v = self.q_skill(attack_action_inputs_v)
-                    q_enemy_mean_v = th.mean(q_enemy_v, 1, True)
-                    q_attack_list_v.append(q_enemy_mean_v)
-                q_attack_v = th.stack(q_attack_list_v, dim=1).squeeze()
-                q_v = th.cat([q_base_v, q_attack_v], dim=-1)    
+                q_v = q_base
+                
             return q, h, q_v, h_v
-        
+
         else:
             return q, h

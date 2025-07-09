@@ -93,7 +93,7 @@ class UPDeTMAC:
         
         if self.main_args.virtual_task and not test_mode:
             return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), \
-                virtual_agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1).repeat_interleave(self.main_args.repeat_num, dim=1)
+                virtual_agent_outs.view(int(ep_batch.batch_size/2), self.task2n_agents[task], -1)
         else:
             return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
 
@@ -104,7 +104,7 @@ class UPDeTMAC:
         self.hidden_states = hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
         if self.main_args.virtual_task:
             virtual_hidden_states = self.agent.init_hidden()   
-            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
+            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(int(batch_size/2), n_agents, -1)
 
     def parameters(self):
         return self.agent.parameters()
