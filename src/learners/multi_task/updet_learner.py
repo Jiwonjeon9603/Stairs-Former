@@ -253,7 +253,7 @@ class UPDeTLearner:
             self.logger.log_stat(f"{task}/virtual_loss", virtual_loss.item(), t_env)
             self.logger.log_stat(f"{task}/virtual_td_loss", virtual_td_loss.item(), t_env)
             self.logger.log_stat(f"{task}/virtual_bc_loss", virtual_bc_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
+            
             
             # wandb.log({f"{task}_tot_loss": loss.item()}, step=t_env)
             # wandb.log({f"{task}_bc_loss": bc_loss.item()}, step=t_env)
