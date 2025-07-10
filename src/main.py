@@ -18,7 +18,9 @@ from mto import run as mto
 from baseline_run import run as baseline_run
 from data_collect import run as data_collect
 
-SETTINGS['CAPTURE_MODE'] = "fd" # set to "no" if you want to see stdout/stderr in console
+SETTINGS["CAPTURE_MODE"] = (
+    "fd"  # set to "no" if you want to see stdout/stderr in console
+)
 logger = get_logger()
 
 ex = Experiment("ODIS")
@@ -34,19 +36,18 @@ def my_main(_run, _config, _log):
     config = config_copy(_config)
     np.random.seed(config["seed"])
     th.manual_seed(config["seed"])
-    config['env_args']['seed'] = config["seed"]
-
+    config["env_args"]["seed"] = config["seed"]
 
     ########## For debugging ###########
-    config["run_file"] = "baseline_run"
+    # config["run_file"] = "baseline_run"
     ####################################
 
     # run the framework
-    if config['run_file'].startswith('mto'):
+    if config["run_file"].startswith("mto"):
         mto(_run, config, _log)
-    elif config['run_file'].startswith('baseline_run'):
+    elif config["run_file"].startswith("baseline_run"):
         baseline_run(_run, config, _log)
-    elif config['run_file'].startswith('data_collect'):
+    elif config["run_file"].startswith("data_collect"):
         data_collect(_run, config, _log)
     else:
         run(_run, config, _log)
@@ -61,7 +62,15 @@ def _get_config(params, arg_name, subfolder):
             break
 
     if config_name is not None:
-        with open(os.path.join(os.path.dirname(__file__), "config", subfolder, "{}.yaml".format(config_name)), "r") as f:
+        with open(
+            os.path.join(
+                os.path.dirname(__file__),
+                "config",
+                subfolder,
+                "{}.yaml".format(config_name),
+            ),
+            "r",
+        ) as f:
             try:
                 config_dict = yaml.full_load(f)
             except yaml.YAMLError as exc:
@@ -71,14 +80,16 @@ def _get_config(params, arg_name, subfolder):
     else:
         return {}
 
+
 def _get_run_file(params):
-    run_file = ''
+    run_file = ""
     for _i, _v in enumerate(params):
-        if _v.startswith('--') and '=' not in _v:
+        if _v.startswith("--") and "=" not in _v:
             run_file = _v[2:]
             del params[_i]
             return run_file
     return run_file
+
 
 def recursive_dict_update(d, u):
     for k, v in u.items():
@@ -88,6 +99,7 @@ def recursive_dict_update(d, u):
             d[k] = v
     return d
 
+
 def config_copy(config):
     if isinstance(config, dict):
         return {k: config_copy(v) for k, v in config.items()}
@@ -95,6 +107,7 @@ def config_copy(config):
         return [config_copy(v) for v in config]
     else:
         return deepcopy(config)
+
 
 # get config from argv, such as "remark"
 def _get_argv_config(params):
@@ -114,11 +127,14 @@ def _get_argv_config(params):
         params.remove(_v)
     return config
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     params = deepcopy(sys.argv)
 
     # Get the defaults from default.yaml
-    with open(os.path.join(os.path.dirname(__file__), "config", "default.yaml"), "r") as f:
+    with open(
+        os.path.join(os.path.dirname(__file__), "config", "default.yaml"), "r"
+    ) as f:
         try:
             config_dict = yaml.full_load(f)
         except yaml.YAMLError as exc:
@@ -126,7 +142,7 @@ if __name__ == '__main__':
 
     # read the run file
     run_file = _get_run_file(params)
-    config_dict['run_file'] = run_file
+    config_dict["run_file"] = run_file
 
     # Load algorithm base configs
     alg_config = _get_config(params, "--config", "algs")
@@ -136,12 +152,11 @@ if __name__ == '__main__':
     # get env type and load env config
     env_config = _get_config(params, "--env-config", "envs")
     config_dict = recursive_dict_update(config_dict, env_config)
-    
+
     task_config = _get_config(params, "--task-config", "tasks")
     config_dict = recursive_dict_update(config_dict, task_config)
 
     config_dict = recursive_dict_update(config_dict, _get_argv_config(params))
-
 
     ########### For debugging ##################
     with open(
@@ -160,15 +175,16 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             assert False, "default.yaml error: {}".format(exc)
 
-    
     with open(
-        os.path.join(os.path.dirname(__file__), "config/tasks", "marine-hard-medium.yaml"), "r"
+        os.path.join(
+            os.path.dirname(__file__), "config/tasks", "marine-hard-medium.yaml"
+        ),
+        "r",
     ) as f:
         try:
             task_config = yaml.full_load(f)
         except yaml.YAMLError as exc:
             assert False, "default.yaml error: {}".format(exc)
-
 
     config_dict = recursive_dict_update(config_dict, alg_config)
     config_dict = recursive_dict_update(config_dict, env_config)
@@ -181,25 +197,36 @@ if __name__ == '__main__':
         config_dict["env_args"]["map_name"] = config_dict["map_name"]
 
     # get result path
-    if 'remark' in config_dict:
-        config_dict['remark'] = '_' + config_dict['remark']
+    if "remark" in config_dict:
+        config_dict["remark"] = "_" + config_dict["remark"]
     else:
-        config_dict['remark'] = ''
-    unique_token = "{}{}_{}".format(config_dict['name'], config_dict['remark'], datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
-    config_dict['unique_token'] = unique_token
-    
-    if config_dict['evaluate']:
-        results_path = os.path.join(results_path, 'evaluate')
+        config_dict["remark"] = ""
+    unique_token = "{}{}_{}".format(
+        config_dict["name"],
+        config_dict["remark"],
+        datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+    )
+    config_dict["unique_token"] = unique_token
+
+    if config_dict["evaluate"]:
+        results_path = os.path.join(results_path, "evaluate")
     results_save_dir = os.path.join(
-        results_path, config_dict['run_file'], 
-        config_dict['env'] + os.sep + config_dict['env_args']['map_name'] if config_dict['env'].startswith('sc2') else config_dict['env'], 
-        config_dict['name'] + config_dict['remark'],
-        unique_token
+        results_path,
+        config_dict["run_file"],
+        (
+            config_dict["env"] + os.sep + config_dict["env_args"]["map_name"]
+            if config_dict["env"].startswith("sc2")
+            else config_dict["env"]
+        ),
+        config_dict["name"] + config_dict["remark"],
+        unique_token,
     )
 
     os.makedirs(results_save_dir, exist_ok=True)
-    config_dict['results_save_dir'] = results_save_dir
-    config_dict['pretrain_save_dir'] = os.path.join(dirname(results_save_dir), 'pretrain-models')
+    config_dict["results_save_dir"] = results_save_dir
+    config_dict["pretrain_save_dir"] = os.path.join(
+        dirname(results_save_dir), "pretrain-models"
+    )
 
     # Save to disk by default for sacred
     file_obs_path = os.path.join(results_save_dir, "sacred")
