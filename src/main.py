@@ -39,7 +39,7 @@ def my_main(_run, _config, _log):
     config["env_args"]["seed"] = config["seed"]
 
     ########## For debugging ###########
-    # config["run_file"] = "baseline_run"
+    config["run_file"] = "baseline_run"
     ####################################
 
     # run the framework
