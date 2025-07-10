@@ -52,6 +52,11 @@ class UPDeTAgent(nn.Module):
         if self.virtual_task:
             self.num_vally = args.virtual_n_enemies
             self.num_venemy = args.virtual_n_enemies
+            self.virtual_timeago = args.virtual_timeago
+            self.previous_tokens=[]    
+            self.virtual_ratio = args.virtual_ratio
+            
+        
         
 
     def init_hidden(self):
@@ -103,9 +108,10 @@ class UPDeTAgent(nn.Module):
         history_hidden = hidden_state
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
-
+        
+        self.previous_tokens.append(total_hidden)
+       
         if self.virtual_task and not test_mode:
-
             if task == "3m":
                 num_v_enemy = 1
                 num_v_ally = 1
@@ -119,19 +125,46 @@ class UPDeTAgent(nn.Module):
                 num_v_enemy = self.num_vally
                 num_v_ally = self.num_vally
 
+            ################ with another episodes #####################
+            # bsn = own_hidden.shape[0]
+            # v_own_hidden = own_hidden[:int(bsn/2)]
+            
+            # ### virtual enemy ###
+            # v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/2)], enemy_hidden[int(bsn/2):][:, :num_v_enemy, :]], dim=1)
+            
+            # ### virtual ally ###
+            # v_ally_hidden = th.cat([ally_hidden[:int(bsn/2)], ally_hidden[int(bsn/2):][:, :num_v_ally, :]], dim=1)
+            
+            # v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
+            
+            # v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
+            ############################################################
+            
+            ################## Smae episode ##############################
+
+            
             bsn = own_hidden.shape[0]
-            v_own_hidden = own_hidden[:int(bsn/2)]
+            if len(self.previous_tokens) > self.virtual_timeago:
+                prev_hidden = self.previous_tokens[-1-self.virtual_timeago]
+            else:
+                prev_hidden = total_hidden
+                
+            own_feat_size = own_hidden.shape[1]
+            enemy_feat_size = enemy_hidden.shape[1]
+            ally_feat_size = ally_hidden.shape[1]
+            history_feat_size = history_hidden.shape[1]
             
-            ### virtual enemy ###
-            v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/2)], enemy_hidden[int(bsn/2):][:, :num_v_enemy, :]], dim=1)
+            v_own_f, v_enemy_f, v_ally_f, _ = prev_hidden.split([own_feat_size, enemy_feat_size, ally_feat_size, history_feat_size], dim=1)
             
-            ### virtual ally ###
-            v_ally_hidden = th.cat([ally_hidden[:int(bsn/2)], ally_hidden[int(bsn/2):][:, :num_v_ally, :]], dim=1)
-            
+
+            v_own_hidden = v_own_f[:int(bsn/self.virtual_ratio), :]
+            v_enemy_hidden = th.cat([v_enemy_f[:int(bsn/self.virtual_ratio)], v_enemy_f[:int(bsn/self.virtual_ratio), :num_v_enemy, :]], dim=1)
+            v_ally_hidden = th.cat([v_ally_f[:int(bsn/self.virtual_ratio)], v_ally_f[:int(bsn/self.virtual_ratio), :num_v_ally, :]], dim=1)
             v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
-            
+            v_history = v_history[:int(bsn/self.virtual_ratio)]
             v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
 
+            outputs_virtual = self.transformer(v_total_hidden, None)
 
         if token_dropout != 0:
             if not test_mode:
@@ -152,34 +185,11 @@ class UPDeTAgent(nn.Module):
                 mask_2d = (~col_mask).float()
                 token_mask = mask_2d.unsqueeze(1) * mask_2d.unsqueeze(2)
 
-                outputs = self.transformer(total_hidden, token_mask)
-                
-                if self.virtual_task:
-                    hb_v, ht_v, _ = v_total_hidden.size()
-                    token_mask_v = th.ones(hb_v, ht_v, ht_v, device=own_obs.device)
-
-                    col_prob_v = (th.rand(hb_v, ht_v - 2, device=own_obs.device) < token_dropout)
-                    col_mask_v = th.zeros(hb_v, ht_v, dtype=th.bool, device=own_obs.device)
-                    col_mask_v[:, 1:ht_v - 1] = col_prob_v
-                    
-                    virtual_data_actions_flat = data_actions_flat[:int(bsn/2)]
-                    
-                    mask_condition_v = virtual_data_actions_flat[:int(bsn/2)] > 5
-                    selected_idx_v = th.arange(hb_v, device=own_obs.device)[mask_condition_v]
-                    selected_cols_v = virtual_data_actions_flat[mask_condition_v] - 5
-                    col_mask_v[selected_idx_v, selected_cols_v] = False
-
-                    mask_2d_v = (~col_mask_v).float()
-                    token_mask_v = mask_2d_v.unsqueeze(1) * mask_2d_v.unsqueeze(2)
-
-                    outputs_virtual = self.transformer(v_total_hidden, token_mask_v)
-                    
+                outputs = self.transformer(total_hidden, token_mask)        
             else:
                 outputs = self.transformer(total_hidden, None)
         else:
             outputs = self.transformer(total_hidden, None)
-            if self.virtual_task and not test_mode:
-                outputs_virtual = self.transformer(v_total_hidden, None)
 
         h = outputs[:, -1:, :]
         # base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)

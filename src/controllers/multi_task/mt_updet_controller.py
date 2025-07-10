@@ -104,7 +104,8 @@ class UPDeTMAC:
         self.hidden_states = hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
         if self.main_args.virtual_task:
             virtual_hidden_states = self.agent.init_hidden()   
-            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(int(batch_size/2), n_agents, -1)
+            self.agent.previous_tokens = []
+            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
 
     def parameters(self):
         return self.agent.parameters()
