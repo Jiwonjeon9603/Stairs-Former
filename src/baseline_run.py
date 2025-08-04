@@ -65,7 +65,7 @@ def run(_run, _config, _log):
         algorithm_name = args.algo_name + "_dropV3_lam_vir_" + str(args.virtual_lam)
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="testUpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
+    wandb.init(project="0804_UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
 
 
     # Run and train

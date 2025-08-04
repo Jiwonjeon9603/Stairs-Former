@@ -59,14 +59,18 @@ class UPDeTMAC:
 
         data_actions = ep_batch["actions"][:,t]
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
-        
+
+
         if self.main_args.virtual_task:
             if test_mode:
-                agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
+                agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
+                                                            virtual_hidden_state = self.virtual_hidden_states, data_actions = data_actions, \
+                                                                token_dropout = token_dropout, test_mode=test_mode)
             else:
                 agent_outs, self.hidden_states, virtual_agent_outs, self.virtual_hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
         else:
-            agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, data_actions, token_dropout, test_mode)
+            agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
+                                                         data_actions = data_actions, token_dropout = token_dropout, test_mode=test_mode)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits": ### Only in COMA

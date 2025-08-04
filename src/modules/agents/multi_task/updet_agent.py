@@ -50,6 +50,9 @@ class UPDeTAgent(nn.Module):
         self.virtual_task = getattr(args, "virtual_task", False)
         
         if self.virtual_task:
+            self.virtual_individual = getattr(args, "virtual_individual", False)
+            if self.virtual_individual:
+                self.virtual_map = args.virtual_map
             self.num_vally = args.virtual_n_enemies
             self.num_venemy = args.virtual_n_enemies
             self.virtual_timeago = args.virtual_timeago
@@ -109,9 +112,10 @@ class UPDeTAgent(nn.Module):
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
         
-        self.previous_tokens.append(total_hidden)
+        
        
         if self.virtual_task and not test_mode:
+            self.previous_tokens.append(total_hidden)
             if task == "3m":
                 num_v_enemy = 1
                 num_v_ally = 1

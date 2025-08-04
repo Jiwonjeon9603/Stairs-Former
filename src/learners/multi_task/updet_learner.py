@@ -249,10 +249,10 @@ class UPDeTLearner:
                                  (targets * mask[:, :-self.c]).sum().item() / (
                                              mask_elems * self.task2args[task].n_agents), t_env)
             self.task2train_info[task]["log_stats_t"] = t_env
-            
-            self.logger.log_stat(f"{task}/virtual_loss", virtual_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/virtual_td_loss", virtual_td_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/virtual_bc_loss", virtual_bc_loss.item(), t_env)
+            if self.virtual_task:
+                self.logger.log_stat(f"{task}/virtual_loss", virtual_loss.item(), t_env)
+                self.logger.log_stat(f"{task}/virtual_td_loss", virtual_td_loss.item(), t_env)
+                self.logger.log_stat(f"{task}/virtual_bc_loss", virtual_bc_loss.item(), t_env)
             
             
             # wandb.log({f"{task}_tot_loss": loss.item()}, step=t_env)
