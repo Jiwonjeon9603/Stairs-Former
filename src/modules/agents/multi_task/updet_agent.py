@@ -46,28 +46,14 @@ class UPDeTAgent(nn.Module):
         self.transformer = Transformer(self.entity_embed_dim, args.head, args.depth, self.entity_embed_dim)
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
-        
-        self.virtual_task = getattr(args, "virtual_task", False)
-        self.virtual_individual = getattr(args, "virtual_individual", False)
-        self.begin_virtual_tasks = False
-        
-        if self.virtual_task:
-            if self.virtual_individual:
-                self.virtual_map = args.virtual_map
-            self.num_vally = args.virtual_n_enemies
-            self.num_venemy = args.virtual_n_enemies
-            self.virtual_timeago = args.virtual_timeago
-            self.previous_tokens=[]    
-            self.virtual_ratio = args.virtual_ratio
+
             
-        
-        
 
     def init_hidden(self):
         # make hidden states on the same device as model
         return self.q_skill.weight.new(1, self.args.entity_embed_dim).zero_()
 
-    def forward(self, inputs, hidden_state, task, virtual_hidden_state=None, data_actions=None, token_dropout = 0, test_mode = False):
+    def forward(self, inputs, hidden_state, task, data_actions=None, token_dropout = 0, test_mode = False):
         hidden_state = hidden_state.view(-1, 1, self.entity_embed_dim)
         # get decomposer, last_action_shape and n_agents of this specific task
         task_decomposer = self.task2decomposer[task]
@@ -151,69 +137,7 @@ class UPDeTAgent(nn.Module):
             q = q_base
 
 
-        if self.virtual_task and not test_mode:
-
-            self.previous_tokens.append(total_hidden)
-
-            # if self.virtual_individual:
-            #     if task == self.virtual_map:
-            #         num_v_enemy = self.num_venemy
-            #         num_v_ally = self.num_vally
-            #     else:
-            #         num_v_enemy = 0
-            #         num_v_ally = 0
-            # else:
-            if task == "3m":
-                num_v_enemy = 1
-                num_v_ally = 1
-            elif task == "5m_vs_6m":
-                num_v_enemy = 2
-                num_v_ally = 2
-            elif task == "9m_vs_10m":
-                num_v_enemy = 2
-                num_v_ally = 1
-            else:
-                num_v_enemy = self.num_venemy
-                num_v_ally = self.num_vally
-
-            bsn = own_hidden.shape[0]
-            if len(self.previous_tokens) > self.virtual_timeago:
-                begin_virtual_tasks = True
-            else:
-                begin_virtual_tasks = False
-        else:
-            begin_virtual_tasks = False
-
-        if begin_virtual_tasks and not test_mode:
-            prev_hidden = self.previous_tokens[-1-self.virtual_timeago]
-
-            own_feat_size = own_hidden.shape[1]
-            enemy_feat_size = enemy_hidden.shape[1]
-            ally_feat_size = ally_hidden.shape[1]
-            history_feat_size = history_hidden.shape[1]
-            
-            v_own_f, v_enemy_f, v_ally_f, _ = prev_hidden.split([own_feat_size, enemy_feat_size, ally_feat_size, history_feat_size], dim=1)
-            
-            v_own_hidden = own_hidden[:int(bsn/self.virtual_ratio), :]
-            v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/self.virtual_ratio)], v_enemy_f[:int(bsn/self.virtual_ratio), :num_v_enemy, :]], dim=1)
-            v_ally_hidden = th.cat([ally_hidden[:int(bsn/self.virtual_ratio)], v_ally_f[:int(bsn/self.virtual_ratio), :num_v_ally, :]], dim=1)
-            v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
-            v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
-
-            outputs_virtual = self.transformer(v_total_hidden, None)
-
-            h_v = outputs_virtual[:, -1:, :]
-            q_all_v = self.q_skill(outputs_virtual)
-            q_base_v = q_all_v[:, 0, :]
-            q_attack_v = th.mean(q_all_v[:, 1 :enemy_feats.size(0) + num_v_enemy + 1, :], -1)
-            q_v = th.cat([q_base_v, q_attack_v], dim=-1)
-
-            if task_decomposer.n_actions_no_attack == task_decomposer.n_actions:
-                q_v = q_base
-                
-            return q, h, q_v, h_v
-
-        else:
-            return q, h, None, virtual_hidden_state
+        
+        return q, h
 
 

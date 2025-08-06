@@ -57,24 +57,14 @@ def run(_run, _config, _log):
     # sacred is on by default
     logger.setup_sacred(_run)
 
-    alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
+
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
     
     if args.algo_name == "Updet-bc":
-        if args.virtual_task:
-            if args.virtual_individual:
-                algorithm_name = args.algo_name + "_dropV4_lam_vir_" + str(args.virtual_lam) + "_Individual_vir_" + args.virtual_map
-            else:
-                algorithm_name = args.algo_name + "_dropV4_lam_vir_" + str(args.virtual_lam)
-            if args.virtual_avail_none:
-                algorithm_name += "_avail_ZERO"
-            algorithm_name += "_timeago_" +str(args.virtual_timeago)
-        else:
-            algorithm_name = args.algo_name + "_No_Virtual"
+        algorithm_name = args.algo_name
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="Transfer-MARL", group=args.task, name=algorithm_name)
+    wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name)
 
 
     # Run and train
