@@ -19,6 +19,7 @@ from controllers import REGISTRY as mac_REGISTRY
 from components.episode_buffer import ReplayBuffer
 from components.offline_buffer import DataSaver
 from components.transforms import OneHot
+import wandb
 
 SETTINGS['CAPTURE_MODE'] = "fd" # set to "no" if you want to see stdout/stderr in console
 logger = get_logger()
@@ -49,6 +50,9 @@ def run(_run, _config, _log):
         args.learner = 'nonparametric_learner'
     else:
         raise ValueError("Dataset quality {} not supported!".format(args.offline_data_quality))
+
+    quality = args.offline_data_quality.lower()
+    wandb.init(project="Transfer-Collect_data", name=args.algo_name + "_" + args.map_name + "_" + quality)
 
     # setup loggers
     logger = Logger(_log)
@@ -263,6 +267,19 @@ def run_sequential(args, logger):
         if (runner.t_env - last_log_T) >= args.log_interval:
             logger.log_stat("episode", episode, runner.t_env)
             logger.print_recent_stats()
+            # max_log_len = max([len(v) for k,v in logger.stats.items()])
+            # import pdb
+            # pdb.set_trace()
+            wandb.log(
+                {
+                    "time step": runner.t_env,
+                    **{
+                        f"{k}": v[-1][1]
+                        for k,v in logger.stats.items()
+                        # if len(v) == max_log_len
+                    }
+                }
+            )
             last_log_T = runner.t_env
     
     if args.save_replay_buffer and args.offline_data_quality.lower() != 'random':

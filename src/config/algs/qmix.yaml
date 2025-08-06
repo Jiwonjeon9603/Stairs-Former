@@ -26,3 +26,5 @@ name: "qmix"
 
 coef_conservative: 5.0
 type_conservative: "norm"
+
+algo_name: "qmix"

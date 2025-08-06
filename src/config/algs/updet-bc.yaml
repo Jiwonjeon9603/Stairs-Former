@@ -53,7 +53,7 @@ depth: 1
 token_dropout: 0.1
 
 bc: True
-virtual_task: True
+virtual_task: False
 virtual_individual: False
 virtual_map: "3m"
 virtual_n_enemies: 1

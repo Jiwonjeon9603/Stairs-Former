@@ -27,3 +27,5 @@ nopt_min_loss: 0.1
 network_size: small
 
 name: "qtran"
+
+algo_name: "qtran"

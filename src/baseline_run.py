@@ -57,7 +57,7 @@ def run(_run, _config, _log):
     # sacred is on by default
     logger.setup_sacred(_run)
 
-    alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
+    # alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
     # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
     
@@ -74,7 +74,7 @@ def run(_run, _config, _log):
             algorithm_name = args.algo_name + "_No_Virtual"
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name)
+    wandb.init(project="Transfer-MARL", group=args.task, name=algorithm_name)
 
 
     # Run and train
@@ -263,17 +263,6 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                     }
                 }
             )
-
-            # for test in main_args.test_tasks:
-            #     if f"{test}/test_battle_won_mean" in logger.stats.keys():
-            #         log_battle_won_mean = logger.stats[f"{test}/test_battle_won_mean"][-1][-1]
-            #     else:
-            #         log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
-                
-            #     # for multi task
-            #     wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
-            #     # for singl task
-            #     # wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
 
 
 def run_sequential(args, logger):
