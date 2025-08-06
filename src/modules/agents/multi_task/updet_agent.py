@@ -99,6 +99,12 @@ class UPDeTAgent(nn.Module):
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
         
+        if getattr(self.args, "attention_heatmap", False):
+            heatmap = self.transformer.attention_heatmap(total_hidden, None)
+            outputs = self.transformer(total_hidden, None)
+            h = outputs[:, -1:, :]
+            return heatmap, h
+        
 
         if token_dropout != 0:
             if not test_mode:

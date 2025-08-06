@@ -54,4 +54,8 @@ token_dropout: 0.1
 
 bc: True
 
+attention_heatmap: False
+heatmap_batch_indices: [0, 1, 2, 3, 4]
+heatmap_num_plots: 10
+
 algo_name: "Updet-bc"

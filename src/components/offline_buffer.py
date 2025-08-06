@@ -127,6 +127,15 @@ class OfflineBufferH5():
         batch_sample = OfflineSample(episode_data, batch_size, max_ep_t, device=self.device)
         return batch_sample
 
+    def fix_sample(self, batch_size):
+        ep_ids = np.arange(batch_size)
+        # episode_data = {k: th.tensor(v[ep_ids]) for k, v in self.data.items()}
+        episode_data = {k: th.from_numpy(v[ep_ids]).to("cuda") for k, v in self.data.items()}
+        filled = episode_data['filled']
+        max_ep_t = self.max_t_filled(filled).item()
+        batch_sample = OfflineSample(episode_data, batch_size, max_ep_t, device=self.device)
+        return batch_sample
+
 
 class OfflineBufferPickle():
     def __init__(self, datapaths, offline_data_size=2000, device="cpu", random_sample=True):
@@ -235,6 +244,9 @@ class OfflineBuffer():
 
     def sample(self, batch_size):
         return self.buffer.sample(batch_size)
+
+    def fix_sample(self, batch_size):
+        return self.buffer.fix_sample(batch_size)
 
 
 class DataSaver():

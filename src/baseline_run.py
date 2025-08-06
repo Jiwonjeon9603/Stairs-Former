@@ -19,6 +19,7 @@ from components.offline_buffer import OfflineBuffer
 from components.transforms import OneHot
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import wandb
 
@@ -57,14 +58,14 @@ def run(_run, _config, _log):
     # sacred is on by default
     logger.setup_sacred(_run)
 
-
-    wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    
-    if args.algo_name == "Updet-bc":
-        algorithm_name = args.algo_name
-    else:
-        algorithm_name = args.algo_name
-    wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name)
+    if not args.attention_heatmap:
+        wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
+        
+        if args.algo_name == "Updet-bc":
+            algorithm_name = args.algo_name
+        else:
+            algorithm_name = args.algo_name
+        wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name + "_dropout_" + str(args.token_dropout))
 
 
     # Run and train
@@ -100,6 +101,96 @@ def evaluate_sequential(main_args, logger, task2runner):
 
     logger.log_stat("episode", 0, 0)
     logger.print_recent_stats()
+
+def draw_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, first_dead):
+    # task 설정에 따른 토큰 수
+    if task == "3m":
+        n_ally = 2
+        n_enemy = 3
+    elif task == "5m_vs_6m":
+        n_ally = 4
+        n_enemy = 6
+    elif task == "9m_vs_10m":
+        n_ally = 8
+        n_enemy = 10
+    else:
+        n_ally = 1
+        n_enemy = 1
+
+    maps = attention.cpu().numpy()  # [T, A, H, W]
+    T, A, H, W = maps.shape
+
+    time_indices = np.linspace(0, T - 1, num_steps_to_plot, dtype=int)
+
+    fig, axes = plt.subplots(A, num_steps_to_plot, figsize=(num_steps_to_plot * 2.5, A * 2))
+
+    if A == 1:
+        axes = np.expand_dims(axes, 0)
+    if num_steps_to_plot == 1:
+        axes = np.expand_dims(axes, 1)
+
+    boundaries = [0, 1, 1 + n_enemy, 1 + n_enemy + n_ally, H]
+    labels = ["own", "enemy", "ally", "hidden"]
+
+    # 🎯 colorbar는 alpha=1.0 기준으로 생성
+    example_heatmap = maps[0, 0]
+    fig_for_cbar = plt.figure()
+    ax_for_cbar = fig_for_cbar.add_subplot(111)
+    im_cbar = ax_for_cbar.imshow(example_heatmap, cmap="viridis", interpolation="nearest", aspect='auto', alpha=1.0)
+    plt.close(fig_for_cbar)
+
+    for agent in range(A):
+        for i, t in enumerate(time_indices):
+            ax = axes[agent][i]
+            heatmap = maps[t, agent]
+
+            # ✅ first_dead 이후면 연하게
+            alpha = 1.0 if t < first_dead[agent] else 0.3
+
+            im = ax.imshow(heatmap, cmap="viridis", interpolation="nearest", aspect='auto', alpha=alpha)
+
+            # 기본 토큰 간 grid
+            ax.set_xticks(np.arange(W + 1) - 0.5, minor=True)
+            ax.set_yticks(np.arange(H + 1) - 0.5, minor=True)
+            ax.grid(which='minor', color='white', linestyle='-', linewidth=0.5)
+            ax.tick_params(which='minor', bottom=False, left=False)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+            # 빨간 경계선
+            for b in boundaries[1:-1]:
+                ax.axvline(b - 0.5, color='red', linewidth=1.5)
+                ax.axhline(b - 0.5, color='red', linewidth=1.5)
+
+            # 라벨
+            for idx in range(len(labels)):
+                start = boundaries[idx]
+                end = boundaries[idx + 1]
+                center = (start + end - 1) / 2
+                ax.text(center, H + 0.2, labels[idx], ha='center', va='bottom',
+                        fontsize=8, color='black', transform=ax.transData)
+
+            if agent == 0:
+                ax.set_title(f"t={t}")
+            if i == 0:
+                ax.set_ylabel(f"Agent {agent}", rotation=90, fontsize=10)
+
+    # ✅ colorbar는 alpha=1.0 기반
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
+    fig.colorbar(im_cbar, cax=cbar_ax, label="Attention weight")
+
+    plt.suptitle(f"Attention (Batch {batch_idx})", fontsize=14)
+    plt.tight_layout(rect=[0, 0, 0.9, 0.95])
+
+    # 저장
+    save_dir = os.path.join(os.getcwd(), "attention_map")
+    os.makedirs(save_dir, exist_ok=True)
+    filename = f"{task}_batch_{batch_idx}_grid.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"Saved: {save_path}")
+
 
 
 def init_tasks(task_list, main_args, logger):
@@ -173,10 +264,23 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
         np.random.shuffle(train_tasks)
         # train each task
         for task in train_tasks:
-            episode_sample = task2offlinedata[task].sample(batch_size_train)
+            if getattr(main_args, "attention_heatmap", False):
+                episode_sample = task2offlinedata[task].fix_sample(batch_size_train)
+            else:
+                episode_sample = task2offlinedata[task].sample(batch_size_train)
 
             if episode_sample.device != task2args[task].device:
                 episode_sample.to(task2args[task].device)
+
+            if getattr(main_args, "attention_heatmap", False):
+                attention, end_indices, first_zero_idx = learner.attention(episode_sample, t_env, episode, task)
+                # batch_idx = main_args.heatmap_batch_idx
+
+                for batch_idx in main_args.heatmap_batch_indices:
+                    one_attention = attention[batch_idx, :end_indices[batch_idx].item()].detach()
+                    first_dead = first_zero_idx[batch_idx]
+                    draw_attention_heatmap(attention=one_attention, task=task, num_steps_to_plot=main_args.heatmap_num_plots, batch_idx=batch_idx, first_dead=first_dead)
+                continue
 
             if pretrain:
                 if hasattr(learner, 'pretrain'):
@@ -190,6 +294,9 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                 break
             episode += batch_size_run
         t_env += len(train_tasks)
+        
+        if getattr(main_args, "attention_heatmap", False):
+            return
         
         if terminated is not None and terminated:
             logger.console_logger.info(f"Terminate training by the learner at t_env = {t_env}. Finish training.")
@@ -310,6 +417,13 @@ def run_sequential(args, logger):
         
         if main_args.evaluate or main_args.save_replay:
             evaluate_sequential(main_args, logger, task2runner)
+            return
+        if main_args.attention_heatmap:
+            task2offlinedata = {}
+            for task in main_args.train_tasks:
+                task2offlinedata[task] = OfflineBuffer(task, main_args.train_tasks_data_quality[task], data_folder=main_args.offline_data_name, \
+                    offline_data_size=args.offline_data_size, random_sample=args.offline_data_shuffle)
+            train_sequential(main_args.train_tasks, main_args, logger, learner, task2args, task2runner, task2offlinedata)
             return
 
     if getattr(main_args, "pretrain", False):

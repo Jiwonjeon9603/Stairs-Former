@@ -18,6 +18,8 @@ class SelfAttention(nn.Module):
 
         self.unifyheads = nn.Linear(heads * emb, emb)
 
+        
+
     def forward(self, x, mask):
 
         b, t, e = x.size()
@@ -51,7 +53,7 @@ class SelfAttention(nn.Module):
 
         dot = F.softmax(dot, dim=2)
         # - dot now has row-wise self-attention probabilities
-
+        # self.attn_map = dot.detach().cpu()
         # apply the self attention to the values
         out = torch.bmm(dot, values).view(b, h, t, e)
 
@@ -59,6 +61,35 @@ class SelfAttention(nn.Module):
         out = out.transpose(1, 2).contiguous().view(b, t, h * e)
 
         return self.unifyheads(out)
+    
+    def attn_map(self, x, mask):
+    
+        b, t, e = x.size()
+        h = self.heads
+        keys = self.tokeys(x).view(b, t, h, e)
+        queries = self.toqueries(x).view(b, t, h, e)
+        values = self.tovalues(x).view(b, t, h, e)
+
+        keys = keys.transpose(1, 2).contiguous().view(b * h, t, e)
+        queries = queries.transpose(1, 2).contiguous().view(b * h, t, e)
+        values = values.transpose(1, 2).contiguous().view(b * h, t, e)
+
+        queries = queries / (e ** (1 / 4))
+        keys = keys / (e ** (1 / 4))
+
+        dot = torch.bmm(queries, keys.transpose(1, 2))
+
+        assert dot.size() == (b * h, t, t)
+
+        if self.mask:
+            mask_(dot, maskval=float('-inf'), mask_diagonal=False)
+
+        if mask is not None:
+            dot = dot.masked_fill(mask == 0, -1e9)
+
+        dot = F.softmax(dot, dim=2)
+
+        return dot
 
 class TransformerBlock(nn.Module):
 
@@ -127,6 +158,10 @@ class Transformer(nn.Module):
         x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
 
         return x  # , tokens
+    
+    def attention_heatmap(self, tokens, mask):
+        attn = self.tblocks[0].attention.attn_map(tokens, mask)
+        return attn
 
 def mask_(matrices, maskval=0.0, mask_diagonal=True):
 
