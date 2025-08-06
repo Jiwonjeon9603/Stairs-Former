@@ -49,7 +49,6 @@ class UPDeTAgent(nn.Module):
         
         self.virtual_task = getattr(args, "virtual_task", False)
         self.virtual_individual = getattr(args, "virtual_individual", False)
-        self.begin_virtual_tasks = False
         
         if self.virtual_task:
             if self.virtual_individual:
@@ -113,6 +112,49 @@ class UPDeTAgent(nn.Module):
 
         total_hidden = th.cat([own_hidden, enemy_hidden, ally_hidden, history_hidden], dim=1)
         
+        if self.virtual_task:
+            if self.virtual_individual:
+                if task != self.virtual_map:
+                    self.virtual_task = False
+       
+        if self.virtual_task and not test_mode:
+            self.previous_tokens.append(total_hidden)
+            if task == "3m":
+                num_v_enemy = 1
+                num_v_ally = 1
+            elif task == "5m_vs_6m":
+                num_v_enemy = 2
+                num_v_ally = 2
+            elif task == "9m_vs_10m":
+                num_v_enemy = 2
+                num_v_ally = 1
+            else:
+                num_v_enemy = self.num_vally
+                num_v_ally = self.num_vally
+
+            
+            bsn = own_hidden.shape[0]
+            if len(self.previous_tokens) > self.virtual_timeago:
+                prev_hidden = self.previous_tokens[-1-self.virtual_timeago]
+            else:
+                prev_hidden = total_hidden
+                
+            own_feat_size = own_hidden.shape[1]
+            enemy_feat_size = enemy_hidden.shape[1]
+            ally_feat_size = ally_hidden.shape[1]
+            history_feat_size = history_hidden.shape[1]
+            
+            v_own_f, v_enemy_f, v_ally_f, _ = prev_hidden.split([own_feat_size, enemy_feat_size, ally_feat_size, history_feat_size], dim=1)
+            
+
+            v_own_hidden = own_hidden[:int(bsn/self.virtual_ratio), :]
+            v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/self.virtual_ratio)], v_enemy_f[:int(bsn/self.virtual_ratio), :num_v_enemy, :]], dim=1)
+            v_ally_hidden = th.cat([ally_hidden[:int(bsn/self.virtual_ratio)], v_ally_f[:int(bsn/self.virtual_ratio), :num_v_ally, :]], dim=1)
+            v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
+            v_history = v_history[:int(bsn/self.virtual_ratio)]
+            v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
+
+            outputs_virtual = self.transformer(v_total_hidden, None)
 
         if token_dropout != 0:
             if not test_mode:
@@ -140,7 +182,8 @@ class UPDeTAgent(nn.Module):
             outputs = self.transformer(total_hidden, None)
 
         h = outputs[:, -1:, :]
-
+        # base_action_inputs = outputs[:, 0, :]  # th.cat([outputs[:, 0, :], skill], dim=-1)
+        # q_base = self.q_skill(base_action_inputs)  # q_base = 6
 
         q_all = self.q_skill(outputs)
         q_base = q_all[:, 0, :]
@@ -150,58 +193,8 @@ class UPDeTAgent(nn.Module):
         if task_decomposer.n_actions_no_attack == task_decomposer.n_actions:
             q = q_base
 
-
+             
         if self.virtual_task and not test_mode:
-
-            self.previous_tokens.append(total_hidden)
-
-            # if self.virtual_individual:
-            #     if task == self.virtual_map:
-            #         num_v_enemy = self.num_venemy
-            #         num_v_ally = self.num_vally
-            #     else:
-            #         num_v_enemy = 0
-            #         num_v_ally = 0
-            # else:
-            if task == "3m":
-                num_v_enemy = 1
-                num_v_ally = 1
-            elif task == "5m_vs_6m":
-                num_v_enemy = 2
-                num_v_ally = 2
-            elif task == "9m_vs_10m":
-                num_v_enemy = 2
-                num_v_ally = 1
-            else:
-                num_v_enemy = self.num_venemy
-                num_v_ally = self.num_vally
-
-            bsn = own_hidden.shape[0]
-            if len(self.previous_tokens) > self.virtual_timeago:
-                begin_virtual_tasks = True
-            else:
-                begin_virtual_tasks = False
-        else:
-            begin_virtual_tasks = False
-
-        if begin_virtual_tasks and not test_mode:
-            prev_hidden = self.previous_tokens[-1-self.virtual_timeago]
-
-            own_feat_size = own_hidden.shape[1]
-            enemy_feat_size = enemy_hidden.shape[1]
-            ally_feat_size = ally_hidden.shape[1]
-            history_feat_size = history_hidden.shape[1]
-            
-            v_own_f, v_enemy_f, v_ally_f, _ = prev_hidden.split([own_feat_size, enemy_feat_size, ally_feat_size, history_feat_size], dim=1)
-            
-            v_own_hidden = own_hidden[:int(bsn/self.virtual_ratio), :]
-            v_enemy_hidden = th.cat([enemy_hidden[:int(bsn/self.virtual_ratio)], v_enemy_f[:int(bsn/self.virtual_ratio), :num_v_enemy, :]], dim=1)
-            v_ally_hidden = th.cat([ally_hidden[:int(bsn/self.virtual_ratio)], v_ally_f[:int(bsn/self.virtual_ratio), :num_v_ally, :]], dim=1)
-            v_history = virtual_hidden_state.view(-1, 1, self.entity_embed_dim)
-            v_total_hidden = th.cat([v_own_hidden, v_enemy_hidden, v_ally_hidden, v_history], dim=1)
-
-            outputs_virtual = self.transformer(v_total_hidden, None)
-
             h_v = outputs_virtual[:, -1:, :]
             q_all_v = self.q_skill(outputs_virtual)
             q_base_v = q_all_v[:, 0, :]
@@ -214,6 +207,4 @@ class UPDeTAgent(nn.Module):
             return q, h, q_v, h_v
 
         else:
-            return q, h, None, virtual_hidden_state
-
-
+            return q, h

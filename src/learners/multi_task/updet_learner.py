@@ -74,6 +74,11 @@ class UPDeTLearner:
         
         self.virtual_task = main_args.virtual_task
         self.virtual_lam = main_args.virtual_lam
+        self.virtual_timeago = main_args.virtual_timeago
+        self.virtual_individual = getattr(main_args, "virtual_individual", False)
+        if self.virtual_individual:
+            self.virtual_map = main_args.virtual_map
+
 
     def train_policy(self, batch: EpisodeBatch, t_env: int, episode_num: int, task: str):
         # Get the relevant quantities
@@ -84,15 +89,26 @@ class UPDeTLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         avail_actions = batch["avail_actions"]
 
+        # if self.virtual_task:
+        #     if self.virtual_individual:
+        #         if task != self.virtual_map:
+        #             self.virtual_task = False
+        #         else:
+        #             self.virtual_task = True
+
         # Calculate estimated Q-Values
         mac_out = []
         virtual_mac_out = []
         self.mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
             if self.virtual_task:
-                agent_outs, virtual_agent_outs = self.mac.forward(batch, t=t, task=task, token_dropout=self.main_args.token_dropout)
+                if t > self.virtual_timeago - 1:
+                    agent_outs, virtual_agent_outs = self.mac.forward(batch, t=t, task=task, token_dropout=self.main_args.token_dropout)
+                    virtual_mac_out.append(virtual_agent_outs)
+                else:
+                    agent_outs = self.mac.forward(batch, t=t, task=task, token_dropout=self.main_args.token_dropout)
                 mac_out.append(agent_outs)
-                virtual_mac_out.append(virtual_agent_outs)
+                
             else:
                 agent_outs = self.mac.forward(batch, t=t, task=task, token_dropout=self.main_args.token_dropout)
                 mac_out.append(agent_outs)
@@ -102,12 +118,22 @@ class UPDeTLearner:
             virtual_mac_out = th.stack(virtual_mac_out, dim=1)
             
             vb, vt, vn, va = virtual_mac_out.size()
-            virtual_rewards = rewards[:vb]
-            virtual_actions = actions[:vb]
-            virtual_terminated = terminated[:vb]
-            virtual_mask = mask[:vb]
-            virtual_avail_actions = F.pad(avail_actions[:vb], pad=(0, va - avail_actions.shape[-1]))
-            
+            virtual_rewards = rewards[:vb, self.virtual_timeago:]
+            virtual_actions = actions[:vb, self.virtual_timeago:]
+            virtual_terminated = terminated[:vb, self.virtual_timeago:]
+            virtual_mask = mask[:vb, self.virtual_timeago:]
+            if self.main_args.virtual_avail_none:
+                virtual_avail_actions = F.pad(avail_actions[:vb, self.virtual_timeago:], pad=(0, va - avail_actions.shape[-1]))
+            else:
+                if task == "3m":
+                    num_v_enemy = 1
+                elif task == "5m_vs_6m":
+                    num_v_enemy = 2
+                elif task == "9m_vs_10m":
+                    num_v_enemy = 2
+
+                pad_avail_actions = avail_actions[:vb, :-self.virtual_timeago, :,  -vn:-vn+num_v_enemy]
+                virtual_avail_actions = th.cat([avail_actions[:vb, self.virtual_timeago:], pad_avail_actions], dim=-1)
         
         if self.main_args.bc:
             b, t, n, a = mac_out.size()
@@ -127,12 +153,17 @@ class UPDeTLearner:
         self.target_mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
             if self.virtual_task:
-                target_agent_outs, virtual_target_agent_outs = self.target_mac.forward(batch, t=t, task=task, token_dropout=0)
-                virtual_target_mac_out.append(virtual_target_agent_outs)
+                if t > self.virtual_timeago - 1:
+                    target_agent_outs, virtual_target_agent_outs = self.target_mac.forward(batch, t=t, task=task, token_dropout=0)
+                    virtual_target_mac_out.append(virtual_target_agent_outs)
+                else:
+                    target_agent_outs = self.target_mac.forward(batch, t=t, task=task, token_dropout=0)
                 target_mac_out.append(target_agent_outs)
             else:
                 target_agent_outs = self.target_mac.forward(batch, t=t, task=task, token_dropout=0)
                 target_mac_out.append(target_agent_outs)
+
+
 
         # We don't need the first timesteps Q-Value estimate for calculating targets
         target_mac_out = th.stack(target_mac_out, dim=1)  # Concat across time
@@ -209,7 +240,14 @@ class UPDeTLearner:
             virtual_mask = virtual_mask[:,:-self.c].expand_as(virtual_td_error)
             masked_virtual_td_error = virtual_td_error * virtual_mask
             virtual_td_loss = (masked_virtual_td_error ** 2).sum() / virtual_mask.sum()
-            virtual_loss = self.virtual_lam * (virtual_td_loss + virtual_bc_loss)
+            if self.virtual_individual:
+                if task != self.virtual_map:
+                    virtual_lam = 0
+                else:
+                    virtual_lam = self.virtual_lam
+            else:
+                virtual_lam = self.virtual_lam
+            virtual_loss = virtual_lam * (virtual_td_loss + virtual_bc_loss)
         else:
             virtual_loss = 0
         

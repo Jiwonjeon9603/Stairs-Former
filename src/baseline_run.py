@@ -62,10 +62,19 @@ def run(_run, _config, _log):
     # wandb.init(project="0631-UpDeT-multi", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + args.train_tasks[0] + "_" + args.train_tasks_data_quality[args.train_tasks[0]])
     
     if args.algo_name == "Updet-bc":
-        algorithm_name = args.algo_name + "_dropV3_lam_vir_" + str(args.virtual_lam)
+        if args.virtual_task:
+            if args.virtual_individual:
+                algorithm_name = args.algo_name + "_dropV4_lam_vir_" + str(args.virtual_lam) + "_Individual_vir_" + args.virtual_map
+            else:
+                algorithm_name = args.algo_name + "_dropV4_lam_vir_" + str(args.virtual_lam)
+            if args.virtual_avail_none:
+                algorithm_name += "_avail_ZERO"
+            algorithm_name += "_timeago_" +str(args.virtual_timeago)
+        else:
+            algorithm_name = args.algo_name + "_No_Virtual"
     else:
         algorithm_name = args.algo_name
-    wandb.init(project="0804_UpDeT-multi-All", group=args.task + "_" + algorithm_name, name=algorithm_name + "_" + args.task)
+    wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name)
 
 
     # Run and train

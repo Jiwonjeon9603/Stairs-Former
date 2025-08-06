@@ -60,18 +60,27 @@ class UPDeTMAC:
         data_actions = ep_batch["actions"][:,t]
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
 
+        # if self.main_args.virtual_task:
+        #     if self.main_args.virtual_individual:
+        #         if task != self.main_args.virtual_map:
+        #             self.main_args.virtual_task = False
+        #         else:
+        #             self.main_args.virtual_task = True
 
-        if self.main_args.virtual_task:
-            if test_mode:
-                agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
-                                                            virtual_hidden_state = self.virtual_hidden_states, data_actions = data_actions, \
-                                                                token_dropout = token_dropout, test_mode=test_mode)
-            else:
-                agent_outs, self.hidden_states, virtual_agent_outs, self.virtual_hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
-        else:
-            agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
-                                                         data_actions = data_actions, token_dropout = token_dropout, test_mode=test_mode)
+        # if self.main_args.virtual_task:
+        #     if test_mode:
+        #         agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
+        #                                                     virtual_hidden_state = self.virtual_hidden_states, data_actions = data_actions, \
+        #                                                         token_dropout = token_dropout, test_mode=test_mode)
+        #     else:
+        #         agent_outs, self.hidden_states, virtual_agent_outs, self.virtual_hidden_states = self.agent(agent_inputs, self.hidden_states, task, self.virtual_hidden_states, data_actions, token_dropout, test_mode)
+        # else:
+        #     agent_outs, self.hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
+        #                                                  data_actions = data_actions, token_dropout = token_dropout, test_mode=test_mode)
 
+        agent_outs, self.hidden_states, virtual_agent_outs, self.virtual_hidden_states = self.agent(inputs = agent_inputs, hidden_state = self.hidden_states, task = task, \
+                                                                                                    virtual_hidden_state = self.virtual_hidden_states, data_actions = data_actions, \
+                                                                                                    token_dropout = token_dropout, test_mode=test_mode)
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits": ### Only in COMA
 
@@ -96,8 +105,11 @@ class UPDeTMAC:
                     agent_outs[reshaped_avail_actions == 0] = 0.0
         
         if self.main_args.virtual_task and not test_mode:
-            return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), \
-                virtual_agent_outs.view(int(ep_batch.batch_size/2), self.task2n_agents[task], -1)
+            if virtual_agent_outs != None:
+                return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), \
+                    virtual_agent_outs.view(int(ep_batch.batch_size/2), self.task2n_agents[task], -1)
+            else:
+                return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
         else:
             return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
 
@@ -109,7 +121,8 @@ class UPDeTMAC:
         if self.main_args.virtual_task:
             virtual_hidden_states = self.agent.init_hidden()   
             self.agent.previous_tokens = []
-            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
+            self.virtual_hidden_states = virtual_hidden_states.unsqueeze(0).expand(int(batch_size/self.main_args.virtual_ratio), n_agents, -1)
+    
 
     def parameters(self):
         return self.agent.parameters()
