@@ -124,7 +124,6 @@ class UPDeTAgent(nn.Module):
 
                 mask_2d = (~col_mask).float()
                 token_mask = mask_2d.unsqueeze(1) * mask_2d.unsqueeze(2)
-
                 outputs = self.transformer(total_hidden, token_mask)        
             else:
                 outputs = self.transformer(total_hidden, None)

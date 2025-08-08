@@ -191,4 +191,5 @@ smac/
 install_*.sh
 run*.sh
 
-/attention_map*
+
+/attention*

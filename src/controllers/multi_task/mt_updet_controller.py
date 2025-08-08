@@ -60,7 +60,7 @@ class UPDeTMAC:
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
 
 
-        agent_outs, self.hidden_states, = self.agent(agent_inputs, self.hidden_states,task, data_actions, token_dropout, test_mode)
+        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task, data_actions, token_dropout, test_mode)
         
         if getattr(self.main_args, "attention_heatmap", False):
             return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], agent_outs.shape[-1], agent_outs.shape[-1])
