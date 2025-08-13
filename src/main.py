@@ -168,7 +168,7 @@ if __name__ == "__main__":
     #         assert False, "default.yaml error: {}".format(exc)
 
     # with open(
-    #     os.path.join(os.path.dirname(__file__), "config/algs", "updet-bc.yaml"), "r"
+    #     os.path.join(os.path.dirname(__file__), "config/algs", "updet-hier.yaml"), "r"
     # ) as f:
     #     try:
     #         alg_config = yaml.full_load(f)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     # with open(
     #     os.path.join(
-    #         os.path.dirname(__file__), "config/tasks", "marine-attention.yaml"
+    #         os.path.dirname(__file__), "config/tasks", "marine-hard-medium.yaml"
     #     ),
     #     "r",
     # ) as f:
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     if config_dict["evaluate"]:
         results_path = os.path.join(results_path, "evaluate")
-    results_save_dir = os.path.join(
+    results_save_dir1 = os.path.join(
         results_path,
         config_dict["run_file"],
         (
@@ -219,9 +219,29 @@ if __name__ == "__main__":
             else config_dict["env"]
         ),
         config_dict["name"] + config_dict["remark"],
-        unique_token,
+        # unique_token,
     )
-
+    if config_dict.get("no_history", False):
+        detail = "NoHistory"
+    elif config_dict.get("gru_history", False):
+        detail = "GRUHistory"
+    elif config_dict.get("hier_history", False):
+        detail = "HierHistory"
+        detail += str(config_dict["high_step"])
+    else:
+        detail = "BasicHistory"
+    
+    
+    results_save_dir = os.path.join(
+        results_save_dir1,
+        "dropout_" + str(config_dict["token_dropout"]),
+        detail
+    )
+    
+        # results_save_dir = os.path.join(
+        #     results_save_dir1,
+        #     detail
+        # )
     os.makedirs(results_save_dir, exist_ok=True)
     config_dict["results_save_dir"] = results_save_dir
     config_dict["pretrain_save_dir"] = os.path.join(

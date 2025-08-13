@@ -38,7 +38,7 @@ pretrain_steps: 15000
 pretrain: True
 
 head: 1
-depth: 1
+depth: 2
 
 # params about observation decomposition
 id_length: 4
@@ -47,3 +47,5 @@ max_agent: 15
 bc: False
 
 algo_name: "ODIS"
+
+token_dropout: 0

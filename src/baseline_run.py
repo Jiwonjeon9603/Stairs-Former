@@ -48,16 +48,6 @@ def run(_run, _config, _log):
         tb_exp_direc = os.path.join(results_save_dir, 'tb_logs')
         logger.setup_tb(tb_exp_direc)
 
-    # set model save dir
-    args.save_dir = os.path.join(results_save_dir, 'models')
-
-    # write config file
-    config_str = json.dumps(vars(args), indent=4)
-    with open(os.path.join(results_save_dir, "config.json"), "w") as f:
-        f.write(config_str)
-
-    # sacred is on by default
-    logger.setup_sacred(_run)
 
     if not args.attention_heatmap:
         wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
@@ -66,7 +56,27 @@ def run(_run, _config, _log):
             algorithm_name = args.algo_name
         else:
             algorithm_name = args.algo_name
-        wandb.init(project="0804_UpDeT-multi-All", group=args.task, name=algorithm_name + "_dropout_" + str(args.token_dropout) + "_No_Hidden")
+        if args.hier_history:
+            detail = "HierHistory"
+            detail += "_" + str(args.high_step)
+        elif args.no_history:
+            detail = "NoHistory"
+        elif args.gru_history:
+            detail = "GRUHistory"
+        else:
+            detail = "BasicHistory"
+        wandb.init(project="0812-MTMA", group=args.task, name=algorithm_name + "_dropout_" + str(args.token_dropout) + "_" + detail)
+
+    # set model save dir
+    args.save_dir = os.path.join(results_save_dir, 'models', "seed_" + str(args.seed))
+
+    # write config file
+    config_str = json.dumps(vars(args), indent=4)
+    with open(os.path.join(results_save_dir, "config.json"), "w") as f:
+        f.write(config_str)
+
+    # sacred is on by default
+    logger.setup_sacred(_run)
 
 
     # Run and train
@@ -193,7 +203,7 @@ def draw_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, first_
     plt.tight_layout(rect=[0, 0, 0.9, 0.95])
 
     # 저장
-    save_dir = os.path.join(os.getcwd(), "attention_drop_map")
+    save_dir = os.path.join(os.getcwd(), "attention_drop0.1_NoHistory")
     os.makedirs(save_dir, exist_ok=True)
     filename = f"{task}_batch_{batch_idx}_grid.png"
     save_path = os.path.join(save_dir, filename)
@@ -289,7 +299,7 @@ def draw_mean_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, f
     plt.tight_layout(rect=[0, 0, 0.9, 0.95])  # ✅ 여유 공간 확보
 
     # 저장
-    save_dir = os.path.join(os.getcwd(), "attention_mean_drop0_map2")
+    save_dir = os.path.join(os.getcwd(), "attention_mean_drop0.1_NoHistory")
     os.makedirs(save_dir, exist_ok=True)
     filename = f"{task}_batch_{batch_idx}_grid.png"
     save_path = os.path.join(save_dir, filename)
@@ -384,7 +394,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                     one_attention = attention[batch_idx, :end_indices[batch_idx].item()].detach()
                     first_dead = first_zero_idx[batch_idx]
                     draw_attention_heatmap(attention=one_attention, task=task, num_steps_to_plot=main_args.heatmap_num_plots, batch_idx=batch_idx, first_dead=first_dead)
-                    # draw_mean_attention_heatmap(attention=one_attention, task=task, num_steps_to_plot=1, batch_idx=batch_idx, first_dead=first_dead)
+                    draw_mean_attention_heatmap(attention=one_attention, task=task, num_steps_to_plot=1, batch_idx=batch_idx, first_dead=first_dead)
                 continue
 
             if pretrain:

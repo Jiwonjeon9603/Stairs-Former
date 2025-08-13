@@ -57,9 +57,9 @@ def run(_run, _config, _log):
     logger.setup_sacred(_run)
     # alg_name = "&".join(args.train_tasks) + "__TO__" + "&".join(args.test_tasks)
 
-    alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
+    # alg_name = "&".join(args.train_tasks) + "_TO_" + "&".join(args.test_tasks)
     wandb.login(relogin=True, key='ad42a1cee565925e2b5065efe7e76c329b954a29')
-    wandb.init(project="test-0631-UpDeT-multi-All", group=args.task + "_" + args.algo_name, name=args.algo_name + "_" + alg_name)
+    wandb.init(project="0812-MTMA", group=args.task, name=args.algo_name)
 
 
     # Run and train
@@ -263,18 +263,18 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
+            max_log_len = max([len(v) for k,v in logger.stats.items()])
             
-            for test in main_args.test_tasks:
-                if f"{test}/test_battle_won_mean" in logger.stats.keys():
-                    log_battle_won_mean = logger.stats[f"{test}/test_battle_won_mean"][-1][-1]
-                else:
-                    log_battle_won_mean = logger.stats[f"pretrain/{test}/test_battle_won_mean"][-1][-1]
-                
-                # for multi task
-                wandb.log({f"{test}_battle_won_mean": log_battle_won_mean}, step=t_env)
-                # for singl task
-                # wandb.log({f"test_battle_won_mean": log_battle_won_mean}, step=t_env)
-            
+            wandb.log(
+                {
+                    "time step": t_env / (len(train_tasks)),
+                    **{
+                        f"{k}": v[-1][1]
+                        for k,v in logger.stats.items()
+                        # if len(v) == max_log_len
+                    }
+                }
+            )
 
 def run_sequential(args, logger):
     # Init runner so we can get env info
