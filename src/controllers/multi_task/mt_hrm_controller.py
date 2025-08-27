@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 
 # This multi-agent controller shares parameters between agents
-class UPDeTMAC:
+class HRMMAC:
     def __init__(self, train_tasks, task2scheme, task2args, main_args):
         # set some task-specific attributes
         self.train_tasks = train_tasks
@@ -64,10 +64,12 @@ class UPDeTMAC:
         data_actions = ep_batch["actions"][:, t]
         bs = agent_inputs.shape[0] // self.task2n_agents[task]
 
-        agent_outs, self.hidden_states = self.agent(
+        agent_outs, self.low_hidden_states, self.high_hidden_states = self.agent(
             agent_inputs,
-            self.hidden_states,
+            self.low_hidden_states,
+            self.high_hidden_states,
             task,
+            t,
             data_actions,
             token_dropout,
             test_mode,
@@ -116,8 +118,14 @@ class UPDeTMAC:
     def init_hidden(self, batch_size, task):
         # we always know we are in which task when do init_hidden
         n_agents = self.task2n_agents[task]
-        hidden_states = self.agent.init_hidden()
-        self.hidden_states = hidden_states.unsqueeze(0).expand(batch_size, n_agents, -1)
+        high_hidden_states = self.agent.init_hidden()
+        low_hidden_states = self.agent.init_hidden()
+        self.high_hidden_states = high_hidden_states.unsqueeze(0).expand(
+            batch_size, n_agents, -1
+        )
+        self.low_hidden_states = low_hidden_states.unsqueeze(0).expand(
+            batch_size, n_agents, -1
+        )
 
     def parameters(self):
         return self.agent.parameters()
