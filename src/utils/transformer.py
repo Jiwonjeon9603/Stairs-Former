@@ -300,12 +300,14 @@ class HRM(nn.Module):
         b, t, e = tokens.size()
 
         with torch.no_grad():
-            z_H = trunc_normal_init_(
-                torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
-            )
-            z_L = trunc_normal_init_(
-                torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
-            )
+            z_H = torch.zeros_like(tokens)
+            z_L = torch.zeros_like(tokens)
+            # z_H = trunc_normal_init_(
+            #     torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
+            # )
+            # z_L = trunc_normal_init_(
+            #     torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
+            # )
             for itr_step in range(1, self.H_cycles * self.L_cycles):
                 z_L = self.L_level(z_L + z_H + tokens, mask)
                 if itr_step % self.H_cycles == 0:

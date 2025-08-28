@@ -785,7 +785,7 @@ def run_sequential(args, logger):
         task2runner,
         task2offlinedata,
     )
-
+    wandb.finish()
     # save the final model
     if main_args.save_model:
         save_path = os.path.join(main_args.save_dir, str(main_args.t_max))
