@@ -16,7 +16,7 @@ target_update_interval: 80
 
 # use the Q_Learner to train
 agent_output_type: "q"
-learner: "updet_bc_learner"
+learner: "updet_mt_bc_learner"
 double_q: True
 mixer: "mt_qattn"
 mixing_embed_dim: 32
