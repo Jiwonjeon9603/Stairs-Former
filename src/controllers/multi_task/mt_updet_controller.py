@@ -15,9 +15,7 @@ class UPDeTMAC:
         self.train_tasks = train_tasks
         self.task2scheme = task2scheme
         self.task2args = task2args
-        self.task2n_agents = {
-            task: self.task2args[task].n_agents for task in train_tasks
-        }
+        self.task2n_agents = {task: self.task2args[task].n_agents for task in train_tasks}
         self.main_args = main_args
 
         # set some common attributes
@@ -46,15 +44,12 @@ class UPDeTMAC:
         self.skill_dim = main_args.skill_dim
         self.c_step = main_args.c_step
 
-    def select_actions(
-        self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False
-    ):
+    def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False):
         # Only select actions for the selected batch elements in bs
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = self.forward(ep_batch, t_ep, task, test_mode=test_mode)
-        chosen_actions = self.action_selector.select_action(
-            agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode
-        )
+        chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env,
+                                                            test_mode=test_mode)
         return chosen_actions
 
     def forward(self, ep_batch, t, task, token_dropout=0, test_mode=False):
