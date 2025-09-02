@@ -44,7 +44,7 @@ c_step: 1
 beta: 0.01
 coef_conservative: 5.0
 pretrain_steps: 0
-pretrain: False
+pretrain: True
 type_conservative: "norm"
 
 head: 1
@@ -58,9 +58,9 @@ attention_heatmap: False
 heatmap_batch_indices: [0]
 heatmap_num_plots: 10
 
-
 gru_history: False
 no_history: False
+hier_history: False
 
 
 algo_name: "Updet-bc"
