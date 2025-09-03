@@ -164,11 +164,20 @@ class HierReasoningAgent(nn.Module):
                 hb, ht, hd = total_hidden.size()
                 token_mask = th.ones(hb, ht, ht, device=own_obs.device)
                 data_actions_flat = data_actions.squeeze(-1).reshape(-1)
-
+                # if getattr(self.args, "high_hidden_dropout", False):
+                #     col_prob = th.rand(hb, ht - 2, device=own_obs.device) < token_dropout
+                #     col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
+                #     col_mask[:, 1 : ht - 2] = col_prob[:, :-1]
+                #     col_mask[:, ht -1] = col_prob[:, -1]
+                # else:
                 col_prob = th.rand(hb, ht - 3, device=own_obs.device) < token_dropout
                 col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
                 col_mask[:, 1 : ht - 2] = col_prob
-
+                
+                if getattr(self.args, "high_hidden_dropout", False):
+                    if t % self.args.high_step != 0:
+                        col_mask[:, ht - 1] = th.ones(hb, dtype=th.bool, device=own_obs.device)
+                
                 mask_condition = data_actions_flat > 5
                 selected_idx = th.arange(hb, device=own_obs.device)[mask_condition]
                 selected_cols = data_actions_flat[mask_condition] - 5

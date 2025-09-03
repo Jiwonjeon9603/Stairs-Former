@@ -51,6 +51,7 @@ head: 1
 depth: 1
 
 token_dropout: 0.1
+high_hidden_dropout: True
 
 bc: True
 

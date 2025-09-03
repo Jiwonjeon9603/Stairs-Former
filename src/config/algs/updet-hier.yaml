@@ -48,9 +48,10 @@ pretrain: True
 type_conservative: "norm"
 
 head: 1
-depth: 2
+depth: 1
 
 token_dropout: 0.1
+high_hidden_dropout: True
 
 bc: True
 
