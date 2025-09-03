@@ -228,6 +228,8 @@ if __name__ == "__main__":
     elif config_dict.get("hier_history", False):
         detail = "HierHistory"
         detail += str(config_dict["high_step"])
+        if config_dict.get("hier_history", False):
+            detail += "_HighDrop"
     else:
         detail = "BasicHistory"
     
@@ -238,10 +240,6 @@ if __name__ == "__main__":
         detail
     )
     
-        # results_save_dir = os.path.join(
-        #     results_save_dir1,
-        #     detail
-        # )
     os.makedirs(results_save_dir, exist_ok=True)
     config_dict["results_save_dir"] = results_save_dir
     config_dict["pretrain_save_dir"] = os.path.join(
