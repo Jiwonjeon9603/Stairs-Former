@@ -335,8 +335,28 @@ class HRM(nn.Module):
         return x  # , tokens
 
     def attention_heatmap(self, tokens, mask):
-        attn = self.tblocks[0].attention.attn_map(tokens, mask)
-        return attn
+        b, t, e = tokens.size()
+        with torch.no_grad():
+            z_H = torch.zeros_like(tokens)
+            z_L = torch.zeros_like(tokens)
+            
+            for itr_step in range(1, self.H_cycles * self.L_cycles):
+                z_L = self.L_level(z_L + z_H + tokens, mask)
+                
+                Low_hidden_1 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
+                
+                if itr_step % self.H_cycles == 0:
+                    z_H = self.H_level(z_H + z_L, mask)
+            
+                    # 1-step grad
+            z_L = self.L_level(z_L + z_H + tokens, mask)
+            Low_hidden_2 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
+            
+            z_H = self.H_level(z_H + z_L, mask)
+            High_hidden = self.H_level.attention_heatmap(z_H + z_L, mask)
+
+
+        return Low_hidden_1, Low_hidden_2, High_hidden
 
 
 class HierHiddenTransformer(nn.Module):

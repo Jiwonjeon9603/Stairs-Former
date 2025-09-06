@@ -151,7 +151,7 @@ class HRMHSTAgent(nn.Module):
         )
 
         if getattr(self.args, "attention_heatmap", False):
-
+    
             hb, ht, hd = total_hidden.size()
             token_mask = th.ones(hb, ht, ht, device=own_obs.device)
             if self.args.no_history:
@@ -159,20 +159,27 @@ class HRMHSTAgent(nn.Module):
                 token_mask[:, :, -1] = 0
             else:
                 token_mask = None
-            heatmap = self.transformer.attention_heatmap(total_hidden, token_mask)
+            low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap  = self.transformer.attention_heatmap(total_hidden, token_mask)
             outputs = self.transformer(total_hidden, token_mask)
-            h = outputs[:, -1:, :]
-            return heatmap, h
+            h_high = outputs[:, -1, :]
+            h_low = outputs[:, -2, :]
+            return (low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap), h_low, h_high
+
 
         if token_dropout != 0:
             if not test_mode:
                 hb, ht, hd = total_hidden.size()
                 token_mask = th.ones(hb, ht, ht, device=own_obs.device)
                 data_actions_flat = data_actions.squeeze(-1).reshape(-1)
-
-                col_prob = th.rand(hb, ht - 3, device=own_obs.device) < token_dropout
-                col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
-                col_mask[:, 1 : ht - 2] = col_prob
+                if getattr(self.args, "high_hidden_dropout", False):
+                    col_prob = th.rand(hb, ht - 2, device=own_obs.device) < token_dropout
+                    col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
+                    col_mask[:, 1 : ht - 2] = col_prob[:, :-1]
+                    col_mask[:, ht -1] = col_prob[:, -1]
+                else:
+                    col_prob = th.rand(hb, ht - 3, device=own_obs.device) < token_dropout
+                    col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
+                    col_mask[:, 1 : ht - 2] = col_prob
 
                 mask_condition = data_actions_flat > 5
                 selected_idx = th.arange(hb, device=own_obs.device)[mask_condition]

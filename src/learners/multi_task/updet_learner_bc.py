@@ -111,21 +111,28 @@ class UPDeTBCLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         # avail_actions = batch["avail_actions"]
 
-        mac_out = []
+        low_hidden1 = []
+        low_hidden2 = []
+        high_hidden = []
 
         self.mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
-            agent_outs = self.mac.forward(
+            low1, low2, high  = self.mac.forward(
                 batch, t=t, task=task, token_dropout=self.main_args.token_dropout
             )
-            mac_out.append(agent_outs)
-        mac_out = th.stack(mac_out, dim=1)
+            low_hidden1.append(low1)
+            low_hidden2.append(low2)
+            high_hidden.append(high)
+        
+        low_hidden1 = th.stack(low_hidden1, dim=1)
+        low_hidden2 = th.stack(low_hidden2, dim=1)
+        high_hidden = th.stack(high_hidden, dim=1)
+        
         end_indices = (terminated == 1).int().argmax(dim=1)
-
         actions = actions.squeeze(-1)
         zero_mask = actions == 0
         first_zero_idx = zero_mask.float().argmax(dim=1)
-        return mac_out, end_indices, first_zero_idx
+        return (low_hidden1, low_hidden2, high_hidden), end_indices, first_zero_idx
 
     def train_policy(
         self, batch: EpisodeBatch, t_env: int, episode_num: int, task: str
@@ -340,3 +347,4 @@ class UPDeTBCLearner:
         self.optimiser.load_state_dict(
             th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage)
         )
+        

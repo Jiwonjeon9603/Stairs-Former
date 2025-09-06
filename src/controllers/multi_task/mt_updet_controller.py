@@ -69,12 +69,18 @@ class UPDeTMAC:
         )
 
         if getattr(self.main_args, "attention_heatmap", False):
-            return agent_outs.view(
-                ep_batch.batch_size,
-                self.task2n_agents[task],
-                agent_outs.shape[-1],
-                agent_outs.shape[-1],
-            )
+            if len(agent_outs) == 3:
+                b = ep_batch.batch_size
+                na = self.task2n_agents[task]
+                nb = agent_outs[0].shape[-1]
+                return agent_outs[0].view(b, na, nb, nb,), agent_outs[1].view(b, na, nb, nb,), agent_outs[2].view(b, na, nb, nb,)
+            else:
+                return agent_outs.view(
+                    ep_batch.batch_size,
+                    self.task2n_agents[task],
+                    agent_outs.shape[-1],
+                    agent_outs.shape[-1],
+                )
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":  ### Only in COMA

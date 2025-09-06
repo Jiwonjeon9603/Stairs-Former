@@ -154,10 +154,10 @@ class HRMAgent(nn.Module):
                 token_mask[:, :, -1] = 0
             else:
                 token_mask = None
-            heatmap = self.transformer.attention_heatmap(total_hidden, token_mask)
+            low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap  = self.transformer.attention_heatmap(total_hidden, token_mask)
             outputs = self.transformer(total_hidden, token_mask)
             h = outputs[:, -1:, :]
-            return heatmap, h
+            return (low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap), h
 
         if token_dropout != 0:
             if not test_mode:

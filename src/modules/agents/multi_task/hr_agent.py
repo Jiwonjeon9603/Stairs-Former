@@ -156,8 +156,9 @@ class HierReasoningAgent(nn.Module):
                 token_mask = None
             heatmap = self.transformer.attention_heatmap(total_hidden, token_mask)
             outputs = self.transformer(total_hidden, token_mask)
-            h = outputs[:, -1:, :]
-            return heatmap, h
+            h_high = outputs[:, -1, :]
+            h_low = outputs[:, -2, :]
+            return heatmap, h_low, h_high
 
         if token_dropout != 0:
             if not test_mode:

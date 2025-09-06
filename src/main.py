@@ -168,7 +168,7 @@ if __name__ == "__main__":
     #         assert False, "default.yaml error: {}".format(exc)
 
     # with open(
-    #     os.path.join(os.path.dirname(__file__), "config/algs", "updet-hier.yaml"), "r"
+    #     os.path.join(os.path.dirname(__file__), "config/algs", "updet-hrm-hst.yaml"), "r"
     # ) as f:
     #     try:
     #         alg_config = yaml.full_load(f)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     # with open(
     #     os.path.join(
-    #         os.path.dirname(__file__), "config/tasks", "toy0.yaml"
+    #         os.path.dirname(__file__), "config/tasks", "marine-attention.yaml"
     #     ),
     #     "r",
     # ) as f:
@@ -210,17 +210,14 @@ if __name__ == "__main__":
 
     if config_dict["evaluate"]:
         results_path = os.path.join(results_path, "evaluate")
+
     results_save_dir1 = os.path.join(
         results_path,
-        config_dict["run_file"],
-        (
-            config_dict["env"] + os.sep + config_dict["env_args"]["map_name"]
-            if config_dict["env"].startswith("sc2")
-            else config_dict["env"]
-        ),
+        config_dict["task"],
         config_dict["name"] + config_dict["remark"],
         # unique_token,
     )
+
     if config_dict.get("no_history", False):
         detail = "NoHistory"
     elif config_dict.get("gru_history", False):
@@ -228,11 +225,14 @@ if __name__ == "__main__":
     elif config_dict.get("hier_history", False):
         detail = "HierHistory"
         detail += str(config_dict["high_step"])
-        if config_dict.get("hier_history", False):
+        if config_dict.get("high_hidden_dropout", False):
             detail += "_HighDrop"
+        else:
+            detail += "_NoHighDrop"
     else:
         detail = "BasicHistory"
-    
+    if config_dict["save_model"]:
+        detail += "/Models"
     
     results_save_dir = os.path.join(
         results_save_dir1,
