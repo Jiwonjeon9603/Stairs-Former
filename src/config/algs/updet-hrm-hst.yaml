@@ -63,7 +63,7 @@ heatmap_num_plots: 10
 gru_history: False
 no_history: False
 hier_history: True
-high_step: 5
+high_step: 3
 high_freq: 2
 
 h_cycles: 2

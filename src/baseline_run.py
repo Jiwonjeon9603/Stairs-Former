@@ -217,6 +217,7 @@ def draw_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, first_
     print(f"Saved: {save_path}")
 
 
+
 def draw_mean_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, first_dead, main_args, layer):
     import os
     import torch as th
@@ -249,23 +250,34 @@ def draw_mean_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, f
 
     time_indices = np.linspace(0, T - 1, num_steps_to_plot, dtype=int)
 
-    # ✅ figsize 넉넉하게 조정
-    fig, axes = plt.subplots(A, num_steps_to_plot, figsize=(num_steps_to_plot * 4, A * 2))
+    ######## Agent 세로로 ##########
 
-    if A == 1:
-        axes = np.expand_dims(axes, 0)
+    # # ✅ figsize 넉넉하게 조정
+    # fig, axes = plt.subplots(A, num_steps_to_plot, figsize=(num_steps_to_plot * 4, A * 2))
+    # if A == 1:
+    #     axes = np.expand_dims(axes, 0)
+    # if num_steps_to_plot == 1:
+    #     axes = np.expand_dims(axes, 1)
+
+    ######## Agent 가로로 #############
+    fig, axes = plt.subplots(num_steps_to_plot, A, figsize=(A * 2.5, num_steps_to_plot * 2.5))
+
     if num_steps_to_plot == 1:
-        axes = np.expand_dims(axes, 1)
+        axes = np.expand_dims(axes, 0)  # step=1이면 행 추가
+    if A == 1:
+        axes = np.expand_dims(axes, 1)  # agent=1이면 열 추가
+
 
     boundaries = [0, 1, 1 + n_enemy, 1 + n_enemy + n_ally, H]
-    labels = ["own", "enemy", "ally", "hidden"]
+    labels = ["own", "enemy", "ally", "history"]
 
     tmax = th.max(first_dead).item()
     vmin = 0 #np.min(np.mean(maps[:tmax], axis=0))
     # vmax = 0.4 #np.max(np.mean(maps[:tmax], axis=0))
 
     for agent, t in enumerate(first_dead):
-        ax = axes[agent][0]
+        # ax = axes[agent][0] ## agent 세로로
+        ax = axes[0, agent] ## agent 가로로
         mean_heatmap = maps[:t, agent]
         heatmap = np.mean(mean_heatmap, axis=0)
 
@@ -292,12 +304,13 @@ def draw_mean_attention_heatmap(attention, task, num_steps_to_plot, batch_idx, f
             ax.text(center, H + 0.2, labels[idx], ha='center', va='bottom',
                     fontsize=8, color='black', transform=ax.transData)
 
-        if agent == 0:
-            ax.set_title(f"t={t}")
-            ax.set_ylabel(f"Agent {agent}", rotation=90, fontsize=10)
+        # if agent == 0:
+        #     ax.set_title(f"t={t}")
+        ax.set_ylabel(f"Agent {agent}", rotation=90, fontsize=10)
 
     # ✅ colorbar 위치 조정 (왼쪽으로 이동)
-    cbar_ax = fig.add_axes([0.87, 0.15, 0.015, 0.7])
+    # cbar_ax = fig.add_axes([0.87, 0.15, 0.015, 0.7]) ### agent 세로
+    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7]) 
     fig.colorbar(im, cax=cbar_ax, label='Attention weight')
 
     plt.suptitle(f"Attention (Batch {batch_idx})", fontsize=14)
@@ -446,6 +459,7 @@ def train_sequential(
                         draw_mean_attention_heatmap(attention=one_attention, task=task, num_steps_to_plot=1, batch_idx=batch_idx, first_dead=first_dead, main_args=main_args, layer=0)
                 continue
 
+
             if pretrain:
                 if hasattr(learner, "pretrain"):
                     terminated = learner.pretrain(episode_sample, t_env, episode, task)
@@ -468,7 +482,7 @@ def train_sequential(
 
         t_env += len(train_tasks)
         if getattr(main_args, "attention_heatmap", False):
-            return
+            exit()
 
         if callable(update_fn):
             update_fn()
