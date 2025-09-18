@@ -339,24 +339,61 @@ class HRM(nn.Module):
         with torch.no_grad():
             z_H = torch.zeros_like(tokens)
             z_L = torch.zeros_like(tokens)
-            
+
             for itr_step in range(1, self.H_cycles * self.L_cycles):
                 z_L = self.L_level(z_L + z_H + tokens, mask)
-                
+
                 Low_hidden_1 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-                
+
                 if itr_step % self.H_cycles == 0:
                     z_H = self.H_level(z_H + z_L, mask)
-            
+
                     # 1-step grad
             z_L = self.L_level(z_L + z_H + tokens, mask)
             Low_hidden_2 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-            
+
             z_H = self.H_level(z_H + z_L, mask)
             High_hidden = self.H_level.attention_heatmap(z_H + z_L, mask)
 
-
         return Low_hidden_1, Low_hidden_2, High_hidden
+
+
+class HRM_wo_h(nn.Module):
+
+    def __init__(self, emb, heads, depth, output_dim, n_cycles=2):
+        super().__init__()
+
+        self.num_tokens = output_dim
+        self.block = HRMTransformerBlock(emb, heads, depth, output_dim)
+        # self.H_level = HRMTransformerBlock(emb, heads, depth, output_dim)
+        self.n_cycles = n_cycles
+
+        self.toprobs = nn.Linear(emb, output_dim)
+        # self.token_embedding = nn.Linear(input_dim, emb)
+
+    def forward(self, tokens, mask):
+
+        # tokens = self.token_embedding(x)
+        # tokens = torch.cat((x, h), 1)
+        b, t, e = tokens.size()
+
+        z = torch.zeros_like(tokens)
+        for itr_step in range(self.n_cycles):
+            z = self.block(z + tokens, mask)
+
+        x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
+
+        return x  # , tokens
+
+    def attention_heatmap(self, tokens, mask):
+        b, t, e = tokens.size()
+        with torch.no_grad():
+            z = torch.zeros_like(tokens)
+            for itr_Step in range(self.n_cycles):
+                z = self.block(z + tokens, mask)
+                attnetion = self.block.attention_heatmap(z + tokens, mask)
+
+        return attnetion
 
 
 class HierHiddenTransformer(nn.Module):

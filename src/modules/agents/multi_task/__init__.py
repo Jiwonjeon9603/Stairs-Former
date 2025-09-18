@@ -5,6 +5,7 @@ from .bcr_agent import BCRAgent
 from .hr_agent import HierReasoningAgent
 from .updet_hrm_agent import HRMAgent
 from .hrm_hst_agent import HRMHSTAgent
+from .hrm_hst_agent_wo_h import HRMHSTWoHAgent
 
 REGISTRY = {}
 
@@ -15,3 +16,4 @@ REGISTRY["mt_bcr"] = BCRAgent
 REGISTRY["mt_hr"] = HierReasoningAgent
 REGISTRY["mt_hrm"] = HRMAgent
 REGISTRY["mt_hrm_hst"] = HRMHSTAgent
+REGISTRY["mt_hrm_hst_wo_h"] = HRMHSTWoHAgent

@@ -4,16 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed
-from utils.transformer import Transformer, HRM
+from utils.transformer import Transformer, HRM, HRM_wo_h
 
 
-class HRMHSTAgent(nn.Module):
+class HRMHSTWoHAgent(nn.Module):
     """sotax agent for multi-task learning"""
 
     def __init__(
         self, task2input_shape_info, task2decomposer, task2n_agents, decomposer, args
     ):
-        super(HRMHSTAgent, self).__init__()
+        super(HRMHSTWoHAgent, self).__init__()
         self.task2last_action_shape = {
             task: task2input_shape_info[task]["last_action_shape"]
             for task in task2input_shape_info
@@ -48,13 +48,12 @@ class HRMHSTAgent(nn.Module):
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim)
         # self.skill_value = nn.Linear(self.skill_dim, self.entity_embed_dim)
 
-        self.transformer = HRM(
+        self.transformer = HRM_wo_h(
             self.entity_embed_dim,
             args.head,
             args.depth,
             self.entity_embed_dim,
             args.h_cycles,
-            args.l_cycles,
         )
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
