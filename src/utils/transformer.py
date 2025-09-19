@@ -171,20 +171,29 @@ class TransformerBlockPreNorm(nn.Module):
         return x, mask
 
 
-class HierHiddenTransformerBlock(nn.Module):
+class TSFFNTransformerBlock(nn.Module):
 
-    def __init__(self, emb, heads, mask, ff_hidden_mult=4, dropout=0.0, high_freq=2):
+    def __init__(
+        self, emb, heads, mask, ff_hidden_mult=4, dropout=0.0, n_hist_tokens=2
+    ):
         super().__init__()
 
-        self.low_attention = SelfAttention(emb, heads=heads, mask=mask)
-        self.high_attention = SelfAttention(emb, heads=heads, mask=mask)
+        self.attention = SelfAttention(emb, heads=heads, mask=mask)
         self.mask = mask
-        self.high_freq = high_freq
+        self.n_hist_tokens = n_hist_tokens
 
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
 
-        self.ff = nn.Sequential(
+        # FF for observation tokens
+        self.ff_obs = nn.Sequential(
+            nn.Linear(emb, ff_hidden_mult * emb),
+            nn.ReLU(),
+            nn.Linear(ff_hidden_mult * emb, emb),
+        )
+
+        # FF for history tokens
+        self.ff_hist = nn.Sequential(
             nn.Linear(emb, ff_hidden_mult * emb),
             nn.ReLU(),
             nn.Linear(ff_hidden_mult * emb, emb),
@@ -192,27 +201,28 @@ class HierHiddenTransformerBlock(nn.Module):
 
         self.do = nn.Dropout(dropout)
 
-    def forward(self, x_mask_depth):
-        x, mask, depth_id = x_mask_depth
+    def forward(self, x_mask):
+        x, mask = x_mask
 
-        attended = self.low_attention(self.norm1(x), mask)
+        # Attention
+        attended = self.attention(x, mask)
+        x = self.do(self.norm1(x + attended))
 
-        x = attended + x
+        # Split into observation vs history tokens
+        obs, hist = x[: -self.n_hist_tokens], x[-self.n_hist_tokens :]
 
+        # Apply different FFNs
+        obs = self.ff_obs(obs)
+        hist = self.ff_hist(hist)
+
+        # Concatenate back
+        fedforward = torch.cat([obs, hist], dim=0)
+
+        # Residual + dropout
+        x = self.norm2(x + fedforward)
         x = self.do(x)
 
-        fedforward = self.ff(self.norm2(x))
-
-        x = fedforward + x
-
-        x = self.do(x)
-
-        if depth_id % self.high_freq != 0:
-            last_token_from_input = x_mask_depth[0][:, -1:, :]  # shape (B, 1, D)
-            x = torch.cat([x[:, :-1, :], last_token_from_input], dim=1)
-            # x[:, -1, :] = x_mask_depth[0][:, -1, :]
-
-        return x, mask, depth_id + 1
+        return x, mask
 
 
 class Transformer(nn.Module):
@@ -396,9 +406,9 @@ class HRM_wo_h(nn.Module):
         return attnetion
 
 
-class HierHiddenTransformer(nn.Module):
+class TSFFNTransformer(nn.Module):
 
-    def __init__(self, emb, heads, depth, output_dim, high_freq):
+    def __init__(self, emb, heads, depth, output_dim, n_hist_tokens):
         super().__init__()
 
         self.num_tokens = output_dim
@@ -408,8 +418,8 @@ class HierHiddenTransformer(nn.Module):
         tblocks = []
         for i in range(depth):
             tblocks.append(
-                HierHiddenTransformerBlock(
-                    emb=emb, heads=heads, mask=False, high_freq=high_freq
+                TSFFNTransformerBlock(
+                    emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens
                 )
             )
 
@@ -424,7 +434,7 @@ class HierHiddenTransformer(nn.Module):
 
         b, t, e = tokens.size()
 
-        x, mask = self.tblocks((tokens, mask, 1))
+        x, mask = self.tblocks((tokens, mask))
 
         x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
 
