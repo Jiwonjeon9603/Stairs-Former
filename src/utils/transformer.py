@@ -216,7 +216,7 @@ class TSFFNTransformerBlock(nn.Module):
         hist = self.ff_hist(hist)
 
         # Concatenate back
-        fedforward = torch.cat([obs, hist], dim=0)
+        fedforward = torch.cat([obs, hist], dim=1)
 
         # Residual + dropout
         x = self.norm2(x + fedforward)
