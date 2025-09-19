@@ -209,7 +209,7 @@ class TSFFNTransformerBlock(nn.Module):
         x = self.do(self.norm1(x + attended))
 
         # Split into observation vs history tokens
-        obs, hist = x[: -self.n_hist_tokens], x[-self.n_hist_tokens :]
+        obs, hist = x[:, : -self.n_hist_tokens], x[:, -self.n_hist_tokens :]
 
         # Apply different FFNs
         obs = self.ff_obs(obs)
