@@ -2,7 +2,6 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import pdb
 
 from utils.embed import polynomial_embed, binary_embed
 from utils.transformer import TSFFNTransformer

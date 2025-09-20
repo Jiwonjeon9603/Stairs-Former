@@ -117,17 +117,17 @@ class UPDeTBCLearner:
 
         self.mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
-            low1, low2, high  = self.mac.forward(
+            low1, low2, high = self.mac.forward(
                 batch, t=t, task=task, token_dropout=self.main_args.token_dropout
             )
             low_hidden1.append(low1)
             low_hidden2.append(low2)
             high_hidden.append(high)
-        
+
         low_hidden1 = th.stack(low_hidden1, dim=1)
         low_hidden2 = th.stack(low_hidden2, dim=1)
         high_hidden = th.stack(high_hidden, dim=1)
-        
+
         end_indices = (terminated == 1).int().argmax(dim=1)
         actions = actions.squeeze(-1)
         zero_mask = actions == 0
@@ -347,4 +347,3 @@ class UPDeTBCLearner:
         self.optimiser.load_state_dict(
             th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage)
         )
-        

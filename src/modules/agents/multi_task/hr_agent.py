@@ -23,7 +23,6 @@ class HierReasoningAgent(nn.Module):
         self.args = args
 
         self.skill_dim = args.skill_dim
-
         #### define various dimension information
         ## set attributes
         self.entity_embed_dim = args.entity_embed_dim
@@ -178,10 +177,6 @@ class HierReasoningAgent(nn.Module):
                     )
                     col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
                     col_mask[:, 1 : ht - 2] = col_prob
-
-                # if getattr(self.args, "high_hidden_dropout", False):
-                #     if t % self.args.high_step != 0:
-                #         col_mask[:, ht - 1] = th.ones(hb, dtype=th.bool, device=own_obs.device)
 
                 mask_condition = data_actions_flat > 5
                 selected_idx = th.arange(hb, device=own_obs.device)[mask_condition]
