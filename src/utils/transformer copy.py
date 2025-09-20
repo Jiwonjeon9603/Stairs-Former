@@ -260,10 +260,8 @@ class Transformer(nn.Module):
         return attn
 
 
-
-
 class HRMTransformerBlock(nn.Module):
-    
+
     def __init__(self, emb, heads, depth, output_dim):
         super().__init__()
 
@@ -290,8 +288,9 @@ class HRMTransformerBlock(nn.Module):
         attn = self.tblocks[0].attention.attn_map(tokens, mask)
         return attn
 
+
 class HRM(nn.Module):
-    
+
     def __init__(self, emb, heads, depth, output_dim, h_cycles=2, l_cycles=2):
         super().__init__()
 
@@ -367,94 +366,6 @@ class HRM(nn.Module):
             High_hidden = self.H_level.attention_heatmap(z_H + z_L, mask)
 
         return Low_hidden_1, Low_hidden_2, High_hidden
-    
-class HRMTSFFNTransformerBlock(nn.Module):
-    
-    def __init__(self, emb, heads, depth, output_dim, n_hist_tokens):
-        super().__init__()
-
-        self.num_tokens = output_dim
-
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(TSFFNTransformerBlock(emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens))
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-
-        x, mask = self.tblocks((tokens, mask))
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attn = self.tblocks[0].attention.attn_map(tokens, mask)
-        return attn
-
-class HRMTSFFN(nn.Module):
-    
-    def __init__(self, emb, heads, depth, output_dim, h_cycles, l_cycles, n_hist_tokens):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.L_level = HRMTSFFNTransformerBlock(emb, heads, depth, output_dim, n_hist_tokens)
-        self.H_level = HRMTSFFNTransformerBlock(emb, heads, depth, output_dim, n_hist_tokens)
-        self.H_cycles = h_cycles
-        self.L_cycles = l_cycles
-
-        self.toprobs = nn.Linear(emb, output_dim)
-
-    def forward(self, tokens, mask):
-        b, t, e = tokens.size()
-
-        with torch.no_grad():
-            z_H = torch.zeros_like(tokens)
-            z_L = torch.zeros_like(tokens)
-
-            for itr_step in range(1, self.H_cycles * self.L_cycles):
-                z_L = self.L_level(z_L + z_H + tokens, mask)
-                if itr_step % self.H_cycles == 0:
-                    z_H = self.H_level(z_H + z_L, mask)
-
-        assert not z_H.requires_grad and not z_L.requires_grad
-
-        # 1-step grad
-        z_L = self.L_level(z_L + z_H + tokens, mask)
-        z_H = self.H_level(z_H + z_L, mask)
-
-        x = self.toprobs(z_H.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        b, t, e = tokens.size()
-        with torch.no_grad():
-            z_H = torch.zeros_like(tokens)
-            z_L = torch.zeros_like(tokens)
-
-            for itr_step in range(1, self.H_cycles * self.L_cycles):
-                z_L = self.L_level(z_L + z_H + tokens, mask)
-
-                Low_hidden_1 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-
-                if itr_step % self.H_cycles == 0:
-                    z_H = self.H_level(z_H + z_L, mask)
-
-                    # 1-step grad
-            z_L = self.L_level(z_L + z_H + tokens, mask)
-            Low_hidden_2 = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-
-            z_H = self.H_level(z_H + z_L, mask)
-            High_hidden = self.H_level.attention_heatmap(z_H + z_L, mask)
-
-        return Low_hidden_1, Low_hidden_2, High_hidden
-    
-
 
 
 class HRM_wo_h(nn.Module):

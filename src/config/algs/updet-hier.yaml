@@ -23,7 +23,7 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-name: "Hier_Reasoning"
+name: "Hier_Reasoning_Depth2"
 
 # agent type
 agent: "mt_hr"
@@ -48,10 +48,10 @@ pretrain: True
 type_conservative: "norm"
 
 head: 1
-depth: 1
+depth: 2
 
 token_dropout: 0.1
-high_hidden_dropout: True
+high_hidden_dropout: False
 
 bc: True
 
@@ -63,6 +63,6 @@ heatmap_num_plots: 10
 gru_history: False
 no_history: False
 hier_history: True
-high_step: 3
+high_step: 5
 
-algo_name: "Hier_Reasoning"
+algo_name: "Hier_Reasoning_Depth2"
