@@ -4,16 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed
-from utils.transformer import Transformer, HRM, HRMTSFFN
+from utils.transformer import RepeatTransformer
 
 
-class HRMHSTAgent(nn.Module):
+class ReAgent(nn.Module):
     """sotax agent for multi-task learning"""
 
     def __init__(
         self, task2input_shape_info, task2decomposer, task2n_agents, decomposer, args
     ):
-        super(HRMHSTAgent, self).__init__()
+        super(ReAgent, self).__init__()
         self.task2last_action_shape = {
             task: task2input_shape_info[task]["last_action_shape"]
             for task in task2input_shape_info
@@ -47,25 +47,14 @@ class HRMHSTAgent(nn.Module):
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim)
         # self.skill_value = nn.Linear(self.skill_dim, self.entity_embed_dim)
-        if getattr(self.args, "tsffn", False):
-            self.transformer = HRMTSFFN(
-                self.entity_embed_dim,
-                args.head,
-                args.depth,
-                self.entity_embed_dim,
-                args.h_cycles,
-                args.l_cycles,
-                args.n_hist_tokens,
-            )
-        else:
-            self.transformer = HRM(
-                self.entity_embed_dim,
-                args.head,
-                args.depth,
-                self.entity_embed_dim,
-                args.h_cycles,
-                args.l_cycles,
-            )
+
+        self.transformer = RepeatTransformer(
+            self.entity_embed_dim,
+            args.head,
+            args.depth,
+            self.entity_embed_dim,
+            args.n_repeat,
+        )
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
 
