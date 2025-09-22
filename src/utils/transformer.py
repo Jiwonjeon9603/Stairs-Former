@@ -471,11 +471,15 @@ class TwinTransformer(nn.Module):
 
         z = tokens
 
-        for itr_step in range(self.L_cycles):
-            z = self.L_level(z, mask)
+        with torch.no_grad():
+            for itr_step in range(1, self.L_cycles):
+                z = self.L_level(z, mask)
+        z = self.L_level(z, mask)
 
-        for itr_step in range(self.H_cycles):
-            z = self.H_level(z, mask)
+        with torch.no_grad():
+            for itr_step in range(1, self.H_cycles):
+                z = self.H_level(z, mask)
+        z = self.H_level(z, mask)
 
         x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
 
