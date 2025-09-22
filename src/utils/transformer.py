@@ -449,6 +449,55 @@ class HRM(nn.Module):
         return attns
 
 
+class TwinTransformer(nn.Module):
+
+    def __init__(self, emb, heads, depth, output_dim, h_cycles=2, l_cycles=2):
+        super().__init__()
+
+        self.num_tokens = output_dim
+        self.L_level = HRMTransformerBlock(emb, heads, depth, output_dim)
+        self.H_level = HRMTransformerBlock(emb, heads, depth, output_dim)
+        self.H_cycles = h_cycles
+        self.L_cycles = l_cycles
+
+        self.toprobs = nn.Linear(emb, output_dim)
+        # self.token_embedding = nn.Linear(input_dim, emb)
+
+    def forward(self, tokens, mask):
+
+        # tokens = self.token_embedding(x)
+        # tokens = torch.cat((x, h), 1)
+        b, t, e = tokens.size()
+
+        z = tokens
+
+        for itr_step in range(self.L_cycles):
+            z = self.L_level(z, mask)
+
+        for itr_step in range(self.H_cycles):
+            z = self.H_level(z, mask)
+
+        x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
+
+        return x  # , tokens
+
+    def attention_heatmap(self, tokens, mask):
+        b, t, e = tokens.size()
+        attns = []
+        with torch.no_grad():
+            z = tokens
+
+            for itr_step in range(self.L_cycles):
+                z, attn = self.L_level.attention_heatmap(z, mask)
+                attns.extend(attn)
+
+            for itr_step in range(self.H_cycles):
+                z, attn = self.H_level.attention_heatmap(z, mask)
+                attns.extend(attn)
+
+        return attns
+
+
 class RepeatTransformer(nn.Module):
 
     def __init__(self, emb, heads, depth, output_dim, n_repeat=2):

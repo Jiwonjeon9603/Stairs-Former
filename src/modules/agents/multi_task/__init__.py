@@ -8,6 +8,7 @@ from .hrm_hst_agent import HRMHSTAgent
 from .hrm_hst_agent_wo_h import HRMHSTWoHAgent
 from .tsffn_agent import TSFFNAgent
 from .repeat_agent import ReAgent
+from .tt_agent import TTAgent
 
 REGISTRY = {}
 
@@ -21,3 +22,4 @@ REGISTRY["mt_hrm_hst"] = HRMHSTAgent
 REGISTRY["mt_hrm_hst_wo_h"] = HRMHSTWoHAgent
 REGISTRY["mt_tsffn"] = TSFFNAgent
 REGISTRY["mt_repeat"] = ReAgent
+REGISTRY["mt_tt"] = TTAgent
