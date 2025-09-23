@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed
-from utils.transformer import Transformer, HRM
+from utils.transformer import Transformer, HRM, HRMTSFFN
 
 
 class HRMAgent(nn.Module):
@@ -47,15 +47,25 @@ class HRMAgent(nn.Module):
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim)
         # self.skill_value = nn.Linear(self.skill_dim, self.entity_embed_dim)
-
-        self.transformer = HRM(
-            self.entity_embed_dim,
-            args.head,
-            args.depth,
-            self.entity_embed_dim,
-            args.h_cycles,
-            args.l_cycles,
-        )
+        if getattr(self.args, "tsffn", False):
+            self.transformer = HRMTSFFN(
+                self.entity_embed_dim,
+                args.head,
+                args.depth,
+                self.entity_embed_dim,
+                args.h_cycles,
+                args.l_cycles,
+                args.n_hist_tokens,
+            )
+        else:
+            self.transformer = HRM(
+                self.entity_embed_dim,
+                args.head,
+                args.depth,
+                self.entity_embed_dim,
+                args.h_cycles,
+                args.l_cycles,
+            )
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
 
