@@ -4,16 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed
-from utils.transformer import RepeatTransformer
+from utils.transformer import StairsFormer
 
 
-class ReAgent(nn.Module):
+class StairsAgent(nn.Module):
     """sotax agent for multi-task learning"""
 
     def __init__(
         self, task2input_shape_info, task2decomposer, task2n_agents, decomposer, args
     ):
-        super(ReAgent, self).__init__()
+        super(StairsAgent, self).__init__()
         self.task2last_action_shape = {
             task: task2input_shape_info[task]["last_action_shape"]
             for task in task2input_shape_info
@@ -21,9 +21,7 @@ class ReAgent(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-
-        self.skill_dim = args.skill_dim
-
+        
         #### define various dimension information
         ## set attributes
         self.entity_embed_dim = args.entity_embed_dim
@@ -46,20 +44,20 @@ class ReAgent(nn.Module):
         self.ally_value = nn.Linear(obs_al_dim, self.entity_embed_dim)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim)
-        # self.skill_value = nn.Linear(self.skill_dim, self.entity_embed_dim)
 
-        self.transformer = RepeatTransformer(
+        self.transformer = StairsFormer(
             self.entity_embed_dim,
             args.head,
             args.depth,
             self.entity_embed_dim,
-            args.n_repeat,
+            args.h_cycles,
+            args.l_cycles,
+            args.n_hist_tokens,
         )
 
         self.q_skill = nn.Linear(self.entity_embed_dim, n_actions_no_attack)
 
-        if self.args.hier_history:
-            self.rnn = nn.GRUCell(args.entity_embed_dim, args.entity_embed_dim)
+        self.rnn = nn.GRUCell(args.entity_embed_dim, args.entity_embed_dim)
 
     def init_hidden(self):
         # make hidden states on the same device as model
@@ -132,11 +130,10 @@ class ReAgent(nn.Module):
 
         history_hidden = low_hidden_state
         if t % self.args.high_step == 0:
-            high_hidden = self.rnn(
-                history_hidden.view(-1, self.entity_embed_dim), high_hidden_state
-            )
+            high_hidden = self.rnn(history_hidden.view(-1, self.entity_embed_dim), high_hidden_state)
         else:
             high_hidden = high_hidden_state
+
 
         total_hidden = th.cat(
             [
@@ -149,45 +146,17 @@ class ReAgent(nn.Module):
             dim=1,
         )
 
-        if getattr(self.args, "attention_heatmap", False):
-
-            hb, ht, hd = total_hidden.size()
-            token_mask = th.ones(hb, ht, ht, device=own_obs.device)
-            if self.args.no_history:
-                token_mask[:, -1, :] = 0
-                token_mask[:, :, -1] = 0
-            else:
-                token_mask = None
-            low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap = (
-                self.transformer.attention_heatmap(total_hidden, token_mask)
-            )
-            outputs = self.transformer(total_hidden, token_mask)
-            h_high = outputs[:, -1, :]
-            h_low = outputs[:, -2, :]
-            return (
-                (low_hidden1_heatmap, low_hidden2_heatmap, high_hidden_heatmap),
-                h_low,
-                h_high,
-            )
-
         if token_dropout != 0:
             if not test_mode:
                 hb, ht, hd = total_hidden.size()
                 token_mask = th.ones(hb, ht, ht, device=own_obs.device)
                 data_actions_flat = data_actions.squeeze(-1).reshape(-1)
-                if getattr(self.args, "high_hidden_dropout", False):
-                    col_prob = (
-                        th.rand(hb, ht - 2, device=own_obs.device) < token_dropout
-                    )
-                    col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
-                    col_mask[:, 1 : ht - 2] = col_prob[:, :-1]
-                    col_mask[:, ht - 1] = col_prob[:, -1]
-                else:
-                    col_prob = (
-                        th.rand(hb, ht - 3, device=own_obs.device) < token_dropout
-                    )
-                    col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
-                    col_mask[:, 1 : ht - 2] = col_prob
+                
+                col_prob = (
+                    th.rand(hb, ht - 3, device=own_obs.device) < token_dropout
+                )
+                col_mask = th.zeros(hb, ht, dtype=th.bool, device=own_obs.device)
+                col_mask[:, 1 : ht - 2] = col_prob
 
                 mask_condition = data_actions_flat > 5
                 selected_idx = th.arange(hb, device=own_obs.device)[mask_condition]

@@ -2,10 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import math
-
+import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 class SelfAttention(nn.Module):
     def __init__(self, emb, heads=8, mask=False):
@@ -66,50 +65,6 @@ class SelfAttention(nn.Module):
 
         return self.unifyheads(out)
 
-    def forward_attn(self, x, mask):
-
-        b, t, e = x.size()
-        h = self.heads
-        keys = self.tokeys(x).view(b, t, h, e)
-        queries = self.toqueries(x).view(b, t, h, e)
-        values = self.tovalues(x).view(b, t, h, e)
-
-        # compute scaled dot-product self-attention
-
-        # - fold heads into the batch dimension
-        keys = keys.transpose(1, 2).contiguous().view(b * h, t, e)
-        queries = queries.transpose(1, 2).contiguous().view(b * h, t, e)
-        values = values.transpose(1, 2).contiguous().view(b * h, t, e)
-
-        queries = queries / (e ** (1 / 4))
-        keys = keys / (e ** (1 / 4))
-        # - Instead of dividing the dot products by sqrt(e), we scale the keys and values.
-        #   This should be more memory efficient
-
-        # - get dot product of queries and keys, and scale
-        dot = torch.bmm(queries, keys.transpose(1, 2))
-
-        assert dot.size() == (b * h, t, t)
-
-        if (
-            self.mask
-        ):  # mask out the upper half of the dot matrix, excluding the diagonal
-            mask_(dot, maskval=float("-inf"), mask_diagonal=False)
-
-        if mask is not None:
-            dot = dot.masked_fill(mask == 0, -1e9)
-
-        dot = F.softmax(dot, dim=2)
-        # - dot now has row-wise self-attention probabilities
-        # self.attn_map = dot.detach().cpu()
-        # apply the self attention to the values
-        out = torch.bmm(dot, values).view(b, h, t, e)
-
-        # swap h, t back, unify heads
-        out = out.transpose(1, 2).contiguous().view(b, t, h * e)
-
-        return self.unifyheads(out), dot
-
 
 class TransformerBlock(nn.Module):
 
@@ -121,15 +76,13 @@ class TransformerBlock(nn.Module):
 
         self.norm1 = nn.LayerNorm(emb)
         self.norm2 = nn.LayerNorm(emb)
-
         self.ff = nn.Sequential(
             nn.Linear(emb, ff_hidden_mult * emb),
             nn.ReLU(),
             nn.Linear(ff_hidden_mult * emb, emb),
         )
-
         self.do = nn.Dropout(dropout)
-
+    
     def forward(self, x_mask):
         x, mask = x_mask
 
@@ -147,81 +100,37 @@ class TransformerBlock(nn.Module):
 
         return x, mask
 
-    def forward_attn(self, x_mask):
-        x, mask = x_mask
 
-        attended, attn = self.attention.forward_attn(x, mask)
+class Transformer(nn.Module):
 
-        x = self.norm1(attended + x)
-
-        x = self.do(x)
-
-        fedforward = self.ff(x)
-
-        x = self.norm2(fedforward + x)
-
-        x = self.do(x)
-
-        return x, mask, attn
-
-
-class TransformerBlockPreNorm(nn.Module):
-
-    def __init__(self, emb, heads, mask, ff_hidden_mult=4, dropout=0.0, high_freq=2):
+    def __init__(self, emb, heads, depth, output_dim):
         super().__init__()
 
-        self.attention = SelfAttention(emb, heads=heads, mask=mask)
-        self.mask = mask
-        self.high_freq = high_freq
+        self.num_tokens = output_dim
 
-        self.norm1 = nn.LayerNorm(emb)
-        self.norm2 = nn.LayerNorm(emb)
+        # self.token_embedding = nn.Linear(input_dim, emb)
 
-        self.ff = nn.Sequential(
-            nn.Linear(emb, ff_hidden_mult * emb),
-            nn.ReLU(),
-            nn.Linear(ff_hidden_mult * emb, emb),
-        )
+        tblocks = []
+        for i in range(depth):
+            tblocks.append(TransformerBlock(emb=emb, heads=heads, mask=False))
 
-        self.do = nn.Dropout(dropout)
+        self.tblocks = nn.Sequential(*tblocks)
 
-    def forward(self, x_mask):
-        x, mask = x_mask
+        self.toprobs = nn.Linear(emb, output_dim)
 
-        attended = self.attention(self.norm1(x), mask)
+    def forward(self, tokens, mask):
 
-        x = attended + x
+        b, t, e = tokens.size()
 
-        x = self.do(x)
+        x, mask = self.tblocks((tokens, mask))
 
-        fedforward = self.ff(self.norm2(x))
+        x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
 
-        x = fedforward + x
-
-        x = self.do(x)
-
-        return x, mask
-
-    def forward_attn(self, x_mask):
-        x, mask = x_mask
-
-        attended, attn = self.attention.forward_attn(x, mask)
-
-        x = attended + x
-
-        x = self.do(x)
-
-        fedforward = self.ff(self.norm2(x))
-
-        x = fedforward + x
-
-        x = self.do(x)
-
-        return x, mask, attn
+        return x  # , tokens
 
 
-class TSFFNTransformerBlock(nn.Module):
-
+class StairsBlock(nn.Module):
+    
     def __init__(
         self, emb, heads, mask, ff_hidden_mult=4, dropout=0.0, n_hist_tokens=2
     ):
@@ -250,9 +159,7 @@ class TSFFNTransformerBlock(nn.Module):
 
         self.do = nn.Dropout(dropout)
 
-    def forward(self, x_mask):
-        x, mask = x_mask
-
+    def forward(self, x, mask):
         # Attention
         attended = self.attention(x, mask)
         x = self.do(self.norm1(x + attended))
@@ -271,335 +178,16 @@ class TSFFNTransformerBlock(nn.Module):
         x = self.norm2(x + fedforward)
         x = self.do(x)
 
-        return x, mask
+        return x
 
-    def forward_attn(self, x_mask):
-        x, mask = x_mask
-
-        # Attention
-        attended, attn = self.attention.forward_attn(x, mask)
-        x = self.do(self.norm1(x + attended))
-
-        # Split into observation vs history tokens
-        obs, hist = x[:, : -self.n_hist_tokens], x[:, -self.n_hist_tokens :]
-
-        # Apply different FFNs
-        obs = self.ff_obs(obs)
-        hist = self.ff_hist(hist)
-
-        # Concatenate back
-        fedforward = torch.cat([obs, hist], dim=1)
-
-        # Residual + dropout
-        x = self.norm2(x + fedforward)
-        x = self.do(x)
-
-        return x, mask, attn
-
-
-class Transformer(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim):
+class StairsFormer(nn.Module):
+    
+    def __init__(self, emb, heads, depth, output_dim, h_cycles, l_cycles, n_hist_tokens):
         super().__init__()
 
         self.num_tokens = output_dim
-
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(TransformerBlock(emb=emb, heads=heads, mask=False))
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-        self.toprobs = nn.Linear(emb, output_dim)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-
-        b, t, e = tokens.size()
-
-        x, mask = self.tblocks((tokens, mask))
-
-        x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        x = tokens
-        for block in self.tblocks:
-            x, mask, attn = block.forward_attn((x, mask))
-            attns.append(attn)
-
-        return attns
-
-
-class HRMTransformerBlock(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim):
-        super().__init__()
-
-        self.num_tokens = output_dim
-
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(TransformerBlock(emb=emb, heads=heads, mask=False))
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-
-        x, mask = self.tblocks((tokens, mask))
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        x = tokens
-        for block in self.tblocks:
-            x, mask, attn = block.forward_attn((x, mask))
-            attns.append(attn)
-
-        return x, attns
-
-
-class HRM(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, h_cycles=2, l_cycles=2):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.L_level = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.H_level = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.H_cycles = h_cycles
-        self.L_cycles = l_cycles
-
-        self.toprobs = nn.Linear(emb, output_dim)
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-        b, t, e = tokens.size()
-
-        with torch.no_grad():
-            z_H = torch.zeros_like(tokens)
-            z_L = torch.zeros_like(tokens)
-            # z_H = trunc_normal_init_(
-            #     torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
-            # )
-            # z_L = trunc_normal_init_(
-            #     torch.empty((b, t, e), dtype=tokens.dtype, device=device), std=1
-            # )
-            for itr_step in range(1, self.H_cycles * self.L_cycles):
-                z_L = self.L_level(z_L + z_H + tokens, mask)
-                if itr_step % self.H_cycles == 0:
-                    z_H = self.H_level(z_H + z_L, mask)
-
-            # for _H_step in range(self.H_cycles):
-            #     for _L_step in range(self.L_cycles):
-            #         if not (
-            #             (_H_step == self.H_cycles - 1)
-            #             and (_L_step == self.L_cycles - 1)
-            #         ):
-            #             z_L = self.L_level(z_L, z_H + input_embeddings, **seq_info)
-
-            #     if not (_H_step == self.config.H_cycles - 1):
-            #         z_H = self.H_level(z_H, z_L, **seq_info)
-
-        assert not z_H.requires_grad and not z_L.requires_grad
-
-        # 1-step grad
-        z_L = self.L_level(z_L + z_H + tokens, mask)
-        z_H = self.H_level(z_H + z_L, mask)
-
-        x = self.toprobs(z_H.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        b, t, e = tokens.size()
-        attns = []
-        with torch.no_grad():
-            z_H = torch.zeros_like(tokens)
-            z_L = torch.zeros_like(tokens)
-
-            for itr_step in range(1, self.H_cycles * self.L_cycles):
-                z_L, low_attn = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-                attns.extend(low_attn)
-                if itr_step % self.H_cycles == 0:
-                    z_H, high_attn = self.H_level.attention_heatmap(z_H + z_L, mask)
-                    attns.extend(high_attn)
-                    # 1-step grad
-            z_L, low_attn = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-            attns.extend(low_attn)
-
-            z_H, high_attn = self.H_level.attention_heatmap(z_H + z_L, mask)
-            attns.extend(high_attn)
-
-        return attns
-
-
-class TwinTransformer(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, h_cycles=2, l_cycles=2):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.L_level = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.H_level = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.H_cycles = h_cycles
-        self.L_cycles = l_cycles
-
-        self.toprobs = nn.Linear(emb, output_dim)
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-        b, t, e = tokens.size()
-
-        z = tokens
-
-        with torch.no_grad():
-            for itr_step in range(1, self.L_cycles):
-                z = self.L_level(z, mask)
-        z = self.L_level(z, mask)
-
-        with torch.no_grad():
-            for itr_step in range(1, self.H_cycles):
-                z = self.H_level(z, mask)
-        z = self.H_level(z, mask)
-
-        x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        b, t, e = tokens.size()
-        attns = []
-        with torch.no_grad():
-            z = tokens
-
-            for itr_step in range(self.L_cycles):
-                z, attn = self.L_level.attention_heatmap(z, mask)
-                attns.extend(attn)
-
-            for itr_step in range(self.H_cycles):
-                z, attn = self.H_level.attention_heatmap(z, mask)
-                attns.extend(attn)
-
-        return attns
-
-
-class RepeatTransformer(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, n_repeat=2):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.inner_transforemr = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.n_repeat = n_repeat
-
-        self.toprobs = nn.Linear(emb, output_dim)
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-        b, t, e = tokens.size()
-
-        with torch.no_grad():
-            z = torch.zeros_like(tokens)
-            for itr_step in range(1, self.n_repeat):
-                z = self.inner_transforemr(z + tokens, mask)
-
-        assert not z.requires_grad
-
-        # 1-step grad
-        z = self.inner_transforemr(z + tokens, mask)
-
-        x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        with torch.no_grad():
-            z = torch.zeros_like(tokens)
-            for itr_step in range(1, self.n_repeat):
-                z, attn = self.inner_transforemr.attention_heatmap(z + tokens, mask)
-                attns.extend(attn)
-
-            z, attn = self.inner_transforemr.attention_heatmap(z + tokens, mask)
-            attns.extend(attn)
-
-        return attns
-
-
-class HRMTSFFNTransformerBlock(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, n_hist_tokens):
-        super().__init__()
-
-        self.num_tokens = output_dim
-
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(
-                TSFFNTransformerBlock(
-                    emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens
-                )
-            )
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-
-        x, mask = self.tblocks((tokens, mask))
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        x = tokens
-        for block in self.tblocks:
-            x, mask, attn = block.forward_attn((x, mask))
-            attns.append(attn)
-
-        return x, attns
-
-
-class HRMTSFFN(nn.Module):
-
-    def __init__(
-        self, emb, heads, depth, output_dim, h_cycles, l_cycles, n_hist_tokens
-    ):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.L_level = HRMTSFFNTransformerBlock(
-            emb, heads, depth, output_dim, n_hist_tokens
-        )
-        self.H_level = HRMTSFFNTransformerBlock(
-            emb, heads, depth, output_dim, n_hist_tokens
-        )
+        self.L_level = StairsBlock(emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens)
+        self.H_level = StairsBlock(emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens)
         self.H_cycles = h_cycles
         self.L_cycles = l_cycles
 
@@ -627,108 +215,6 @@ class HRMTSFFN(nn.Module):
 
         return x  # , tokens
 
-    def attention_heatmap(self, tokens, mask):
-        b, t, e = tokens.size()
-        attns = []
-        with torch.no_grad():
-            z_H = torch.zeros_like(tokens)
-            z_L = torch.zeros_like(tokens)
-
-            for itr_step in range(1, self.H_cycles * self.L_cycles):
-                z_L, low_attn = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-                attns.extend(low_attn)
-                if itr_step % self.H_cycles == 0:
-                    z_H, high_attn = self.H_level.attention_heatmap(z_H + z_L, mask)
-                    attns.extend(high_attn)
-                    # 1-step grad
-            z_L, low_attn = self.L_level.attention_heatmap(z_L + z_H + tokens, mask)
-            attns.extend(low_attn)
-
-            z_H, high_attn = self.H_level.attention_heatmap(z_H + z_L, mask)
-            attns.extend(high_attn)
-
-        return attns
-
-
-class HRM_wo_h(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, n_cycles=2):
-        super().__init__()
-
-        self.num_tokens = output_dim
-        self.block = HRMTransformerBlock(emb, heads, depth, output_dim)
-        # self.H_level = HRMTransformerBlock(emb, heads, depth, output_dim)
-        self.n_cycles = n_cycles
-
-        self.toprobs = nn.Linear(emb, output_dim)
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-        b, t, e = tokens.size()
-
-        z = torch.zeros_like(tokens)
-        for itr_step in range(self.n_cycles):
-            z = self.block(z + tokens, mask)
-
-        x = self.toprobs(z.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        with torch.no_grad():
-            z = torch.zeros_like(tokens)
-            for itr_step in range(self.n_cycles):
-                z, attn = self.block.attention_heatmap(z + tokens, mask)
-                attns.extend(attn)
-        return attns
-
-
-class TSFFNTransformer(nn.Module):
-
-    def __init__(self, emb, heads, depth, output_dim, n_hist_tokens):
-        super().__init__()
-
-        self.num_tokens = output_dim
-
-        # self.token_embedding = nn.Linear(input_dim, emb)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(
-                TSFFNTransformerBlock(
-                    emb=emb, heads=heads, mask=False, n_hist_tokens=n_hist_tokens
-                )
-            )
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-        self.toprobs = nn.Linear(emb, output_dim)
-
-    def forward(self, tokens, mask):
-
-        # tokens = self.token_embedding(x)
-        # tokens = torch.cat((x, h), 1)
-
-        b, t, e = tokens.size()
-
-        x, mask = self.tblocks((tokens, mask))
-
-        x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
-
-        return x  # , tokens
-
-    def attention_heatmap(self, tokens, mask):
-        attns = []
-        x = tokens
-        for block in self.tblocks:
-            x, mask, attn = block.forward_attn((x, mask))
-            attns.append(attn)
-
-        return attns
 
 
 def mask_(matrices, maskval=0.0, mask_diagonal=True):

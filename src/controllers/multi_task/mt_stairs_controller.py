@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 
 # This multi-agent controller shares parameters between agents
-class HierReasoningMac:
+class StairsMac:
     def __init__(self, train_tasks, task2scheme, task2args, main_args):
         # set some task-specific attributes
         self.train_tasks = train_tasks
@@ -42,9 +42,6 @@ class HierReasoningMac:
         self.hidden_states = None
         self.hidden_states_enc = None
         self.hidden_states_dec = None
-        self.skill = None
-        self.skill_dim = main_args.skill_dim
-        self.c_step = main_args.c_step
 
     def select_actions(
         self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False
@@ -74,39 +71,6 @@ class HierReasoningMac:
             token_dropout,
             test_mode,
         )
-
-        if getattr(self.main_args, "attention_heatmap", False):
-            if len(agent_outs) == 3:
-                b = ep_batch.batch_size
-                na = self.task2n_agents[task]
-                nb = agent_outs[0].shape[-1]
-                return (
-                    agent_outs[0].view(
-                        b,
-                        na,
-                        nb,
-                        nb,
-                    ),
-                    agent_outs[1].view(
-                        b,
-                        na,
-                        nb,
-                        nb,
-                    ),
-                    agent_outs[2].view(
-                        b,
-                        na,
-                        nb,
-                        nb,
-                    ),
-                )
-            else:
-                return agent_outs.view(
-                    ep_batch.batch_size,
-                    self.task2n_agents[task],
-                    agent_outs.shape[-1],
-                    agent_outs.shape[-1],
-                )
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":  ### Only in COMA

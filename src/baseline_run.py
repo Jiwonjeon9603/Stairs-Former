@@ -9,8 +9,6 @@ from utils.timehelper import time_left, time_str
 from os.path import dirname, abspath
 import copy
 import json
-import uuid
-
 from learners.multi_task import REGISTRY as le_REGISTRY
 from runners.multi_task import REGISTRY as r_REGISTRY
 from controllers.multi_task import REGISTRY as mac_REGISTRY
@@ -19,10 +17,6 @@ from components.offline_buffer import OfflineBuffer
 from components.transforms import OneHot
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-
-import wandb
 
 
 def run(_run, _config, _log):
@@ -58,29 +52,6 @@ def run(_run, _config, _log):
     # sacred is on by default
     logger.setup_sacred(_run)
 
-    if args.hier_history:
-        detail = "HierHistory"
-        detail += "_" + str(args.high_step)
-    elif args.no_history:
-        detail = "NoHistory"
-    elif args.gru_history:
-        detail = "GRUHistory"
-    else:
-        detail = "BasicHistory"
-
-    wandb_name = f"agent={args.name}-mac={args.mac}-learner={args.learner}-mixer={args.mixer}-hier={detail}"
-    _config["job"] = _config["name"]
-    # _config = {k: str(v) for k, v in _config.items()}
-    wandb.login(relogin=True, key="ad42a1cee565925e2b5065efe7e76c329b954a29")  # jwjeon
-    # wandb.login(relogin=True, key="c65dcbd2cd1f30816b9a69b67cf462741ea48880") # mscho
-    wandb.init(
-        project="OffMTMARL",
-        group=_config["task"],
-        name=wandb_name,
-        config=_config,
-        id=str(uuid.uuid4()),
-    )
-
     # Run and train
     run_sequential(args=args, logger=logger)
 
@@ -115,294 +86,6 @@ def evaluate_sequential(main_args, logger, task2runner):
     logger.log_stat("episode", 0, 0)
     logger.print_recent_stats()
 
-
-def draw_attention_heatmap(
-    attention, task, num_steps_to_plot, batch_idx, first_dead, main_args, layer
-):
-    if task == "3m":
-        n_ally = 2
-        n_enemy = 3
-        vmax = 0.4
-    elif task == "4m":
-        n_ally = 3
-        n_enemy = 4
-        vmax = 0.4
-    elif task == "5m_vs_6m":
-        n_ally = 4
-        n_enemy = 6
-        vmax = 0.3
-    elif task == "9m_vs_10m":
-        n_ally = 8
-        n_enemy = 10
-        vmax = 0.1
-    else:
-        n_ally = 1
-        n_enemy = 1
-
-    maps = attention.cpu().numpy()  # [T, A, H, W]
-    T, A, H, W = maps.shape
-
-    time_indices = np.linspace(0, T - 1, num_steps_to_plot, dtype=int)
-
-    fig, axes = plt.subplots(
-        A, num_steps_to_plot, figsize=(num_steps_to_plot * 2.5, A * 2)
-    )
-
-    if A == 1:
-        axes = np.expand_dims(axes, 0)
-    if num_steps_to_plot == 1:
-        axes = np.expand_dims(axes, 1)
-
-    boundaries = [0, 1, 1 + n_enemy, 1 + n_enemy + n_ally, H]
-    labels = ["own", "enemy", "ally", "hidden"]
-
-    # 🎯 colorbar는 alpha=1.0 기준으로 생성
-    example_heatmap = maps[0, 0]
-    fig_for_cbar = plt.figure()
-    ax_for_cbar = fig_for_cbar.add_subplot(111)
-    im_cbar = ax_for_cbar.imshow(
-        example_heatmap,
-        cmap="viridis",
-        interpolation="nearest",
-        aspect="auto",
-        alpha=1.0,
-    )
-    plt.close(fig_for_cbar)
-
-    vmin = 0
-
-    for agent in range(A):
-        for i, t in enumerate(time_indices):
-            ax = axes[agent][i]
-            heatmap = maps[t, agent]
-            # ✅ first_dead 이후면 연하게
-            alpha = 1.0 if t < first_dead[agent] else 0.3
-
-            im = ax.imshow(
-                heatmap,
-                vmin=vmin,
-                vmax=vmax,
-                cmap="viridis",
-                interpolation="nearest",
-                aspect="auto",
-                alpha=alpha,
-            )
-
-            # 기본 토큰 간 grid
-            ax.set_xticks(np.arange(W + 1) - 0.5, minor=True)
-            ax.set_yticks(np.arange(H + 1) - 0.5, minor=True)
-            ax.grid(which="minor", color="white", linestyle="-", linewidth=0.5)
-            ax.tick_params(which="minor", bottom=False, left=False)
-            ax.set_xticks([])
-            ax.set_yticks([])
-
-            # 빨간 경계선
-            for b in boundaries[1:-1]:
-                ax.axvline(b - 0.5, color="red", linewidth=1.5)
-                ax.axhline(b - 0.5, color="red", linewidth=1.5)
-
-            # 라벨
-            for idx in range(len(labels)):
-                start = boundaries[idx]
-                end = boundaries[idx + 1]
-                center = (start + end - 1) / 2
-                ax.text(
-                    center,
-                    H + 0.2,
-                    labels[idx],
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    color="black",
-                    transform=ax.transData,
-                )
-
-            if agent == 0:
-                ax.set_title(f"t={t}")
-            if i == 0:
-                ax.set_ylabel(f"Agent {agent}", rotation=90, fontsize=10)
-
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
-    fig.colorbar(im_cbar, cax=cbar_ax, label="Attention weight")
-
-    plt.suptitle(f"Attention (Batch {batch_idx})", fontsize=14)
-    plt.tight_layout(rect=[0, 0, 0.9, 0.95])
-
-    # 저장
-    if getattr(main_args, "high_hidden_dropout", False):
-        fig_name = (
-            "Attention_Heatmap/"
-            + main_args.name
-            + "_"
-            + str(main_args.token_dropout)
-            + "_HD"
-            + "/"
-            + str(layer)
-            + "st-layer"
-        )
-    else:
-        fig_name = (
-            "Attention_Heatmap/"
-            + main_args.name
-            + "_"
-            + str(main_args.token_dropout)
-            + "/"
-            + str(layer)
-            + "st-layer"
-        )
-    save_dir = os.path.join(os.getcwd(), fig_name)
-    os.makedirs(save_dir, exist_ok=True)
-    filename = f"{task}_batch_{batch_idx}.png"
-    save_path = os.path.join(save_dir, filename)
-    plt.savefig(save_path, dpi=300)
-    plt.close()
-    print(f"Saved: {save_path}")
-
-
-def draw_mean_attention_heatmap(
-    attention, task, num_steps_to_plot, batch_idx, first_dead, main_args, layer
-):
-    import os
-    import torch as th
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    # task 설정에 따른 토큰 수
-    if task == "3m":
-        n_ally = 2
-        n_enemy = 3
-        vmax = 0.4
-    elif task == "4m":
-        n_ally = 3
-        n_enemy = 4
-        vmax = 0.4
-    elif task == "5m_vs_6m":
-        n_ally = 4
-        n_enemy = 6
-        vmax = 0.3
-    elif task == "9m_vs_10m":
-        n_ally = 8
-        n_enemy = 10
-        vmax = 0.1
-    else:
-        n_ally = 1
-        n_enemy = 1
-
-    maps = attention.cpu().numpy()  # [T, A, H, W]
-    T, A, H, W = maps.shape
-
-    time_indices = np.linspace(0, T - 1, num_steps_to_plot, dtype=int)
-
-    ######## Agent 세로로 ##########
-
-    # # ✅ figsize 넉넉하게 조정
-    # fig, axes = plt.subplots(A, num_steps_to_plot, figsize=(num_steps_to_plot * 4, A * 2))
-    # if A == 1:
-    #     axes = np.expand_dims(axes, 0)
-    # if num_steps_to_plot == 1:
-    #     axes = np.expand_dims(axes, 1)
-
-    ######## Agent 가로로 #############
-    fig, axes = plt.subplots(
-        num_steps_to_plot, A, figsize=(A * 2.5, num_steps_to_plot * 2.5)
-    )
-
-    if num_steps_to_plot == 1:
-        axes = np.expand_dims(axes, 0)  # step=1이면 행 추가
-    if A == 1:
-        axes = np.expand_dims(axes, 1)  # agent=1이면 열 추가
-
-    boundaries = [0, 1, 1 + n_enemy, 1 + n_enemy + n_ally, H]
-    labels = ["own", "enemy", "ally", "history"]
-
-    tmax = th.max(first_dead).item()
-    vmin = 0  # np.min(np.mean(maps[:tmax], axis=0))
-    # vmax = 0.4 #np.max(np.mean(maps[:tmax], axis=0))
-
-    for agent, t in enumerate(first_dead):
-        # ax = axes[agent][0] ## agent 세로로
-        ax = axes[0, agent]  ## agent 가로로
-        mean_heatmap = maps[:t, agent]
-        heatmap = np.mean(mean_heatmap, axis=0)
-
-        im = ax.imshow(
-            heatmap,
-            vmin=vmin,
-            vmax=vmax,
-            cmap="viridis",
-            interpolation="nearest",
-            aspect="auto",
-        )
-
-        # 기본 토큰 간 grid
-        ax.set_xticks(np.arange(W + 1) - 0.5, minor=True)
-        ax.set_yticks(np.arange(H + 1) - 0.5, minor=True)
-        ax.grid(which="minor", color="white", linestyle="-", linewidth=0.5)
-        ax.tick_params(which="minor", bottom=False, left=False)
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-        # 빨간 경계선
-        for b in boundaries[1:-1]:
-            ax.axvline(b - 0.5, color="red", linewidth=1.5)
-            ax.axhline(b - 0.5, color="red", linewidth=1.5)
-
-        # 라벨
-        for idx in range(len(labels)):
-            start = boundaries[idx]
-            end = boundaries[idx + 1]
-            center = (start + end - 1) / 2
-            ax.text(
-                center,
-                H + 0.2,
-                labels[idx],
-                ha="center",
-                va="bottom",
-                fontsize=8,
-                color="black",
-                transform=ax.transData,
-            )
-
-        # if agent == 0:
-        #     ax.set_title(f"t={t}")
-        ax.set_ylabel(f"Agent {agent}", rotation=90, fontsize=10)
-
-    # ✅ colorbar 위치 조정 (왼쪽으로 이동)
-    # cbar_ax = fig.add_axes([0.87, 0.15, 0.015, 0.7]) ### agent 세로
-    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
-    fig.colorbar(im, cax=cbar_ax, label="Attention weight")
-
-    plt.suptitle(f"Attention (Batch {batch_idx})", fontsize=14)
-    plt.tight_layout(rect=[0, 0, 0.9, 0.95])  # ✅ 여유 공간 확보
-
-    if getattr(main_args, "high_hidden_dropout", False):
-        fig_name = (
-            "Attention_Heatmap_Mean/"
-            + main_args.name
-            + "_"
-            + str(main_args.token_dropout)
-            + "_HD"
-            + "/"
-            + str(layer)
-            + "st-layer"
-        )
-    else:
-        fig_name = (
-            "Attention_Heatmap_Mean/"
-            + main_args.name
-            + "_"
-            + str(main_args.token_dropout)
-            + "/"
-            + str(layer)
-            + "st-layer"
-        )
-    save_dir = os.path.join(os.getcwd(), fig_name)
-    os.makedirs(save_dir, exist_ok=True)
-    filename = f"{task}_batch_{batch_idx}.png"
-    save_path = os.path.join(save_dir, filename)
-    plt.savefig(save_path, dpi=300)
-    plt.close()
-    print(f"Saved: {save_path}")
 
 
 def init_tasks(task_list, main_args, logger):
@@ -478,13 +161,13 @@ def train_sequential(
     task2runner,
     task2offlinedata,
     t_start=0,
-    pretrain=False,
     test_task2offlinedata=None,
 ):
     ########## start training ##########
     t_env = t_start
     episode = 0  # episode does not matter
-    t_max = main_args.t_max if not pretrain else main_args.pretrain_steps
+    t_max = main_args.t_max
+    # t_max = main_args.t_max if not pretrain else main_args.pretrain_steps
     model_save_time = 0
     last_test_T = 0
     last_log_T = 0
@@ -508,85 +191,18 @@ def train_sequential(
         np.random.shuffle(train_tasks)
         # train each task
         for task in train_tasks:
-            if getattr(main_args, "attention_heatmap", False):
-                episode_sample = task2offlinedata[task].fix_sample(batch_size_train)
-            else:
-                episode_sample = task2offlinedata[task].sample(batch_size_train)
+            
+            episode_sample = task2offlinedata[task].sample(batch_size_train)
 
             if episode_sample.device != task2args[task].device:
                 episode_sample.to(task2args[task].device)
-
-            if getattr(main_args, "attention_heatmap", False):
-                attention, end_indices, first_zero_idx = learner.attention(
-                    episode_sample, t_env, episode, task
+        
+            if callable(update_fn):
+                terminated = learner.train(
+                    episode_sample, t_env / len(train_tasks), episode, task
                 )
-                # batch_idx = main_args.heatmap_batch_idx
-                if "HRM" in main_args.name:
-                    for batch_idx in main_args.heatmap_batch_indices:
-                        for k in range(len(attention)):
-                            one_attention = attention[k][
-                                batch_idx, : end_indices[batch_idx].item()
-                            ].detach()
-                            first_dead = first_zero_idx[batch_idx]
-                            draw_attention_heatmap(
-                                attention=one_attention,
-                                task=task,
-                                num_steps_to_plot=main_args.heatmap_num_plots,
-                                batch_idx=batch_idx,
-                                first_dead=first_dead,
-                                main_args=main_args,
-                                layer=k,
-                            )
-                            draw_mean_attention_heatmap(
-                                attention=one_attention,
-                                task=task,
-                                num_steps_to_plot=1,
-                                batch_idx=batch_idx,
-                                first_dead=first_dead,
-                                main_args=main_args,
-                                layer=k,
-                            )
-
-                else:
-                    for batch_idx in main_args.heatmap_batch_indices:
-                        one_attention = attention[
-                            batch_idx, : end_indices[batch_idx].item()
-                        ].detach()
-                        first_dead = first_zero_idx[batch_idx]
-                        draw_attention_heatmap(
-                            attention=one_attention,
-                            task=task,
-                            num_steps_to_plot=main_args.heatmap_num_plots,
-                            batch_idx=batch_idx,
-                            first_dead=first_dead,
-                            main_args=main_args,
-                            layer=0,
-                        )
-                        draw_mean_attention_heatmap(
-                            attention=one_attention,
-                            task=task,
-                            num_steps_to_plot=1,
-                            batch_idx=batch_idx,
-                            first_dead=first_dead,
-                            main_args=main_args,
-                            layer=0,
-                        )
-                continue
-
-            if pretrain:
-                if hasattr(learner, "pretrain"):
-                    terminated = learner.pretrain(episode_sample, t_env, episode, task)
-                else:
-                    raise ValueError(
-                        "Do pretraining with a learner that does not have a `pretrain` method!"
-                    )
             else:
-                if callable(update_fn):
-                    terminated = learner.train(
-                        episode_sample, t_env / len(train_tasks), episode, task
-                    )
-                else:
-                    terminated = learner.train(episode_sample, t_env, episode, task)
+                terminated = learner.train(episode_sample, t_env, episode, task)
 
             if terminated is not None and terminated:
                 break
@@ -594,9 +210,7 @@ def train_sequential(
             episode += batch_size_run
 
         t_env += len(train_tasks)
-        if getattr(main_args, "attention_heatmap", False):
-            exit()
-
+        
         if callable(update_fn):
             update_fn()
 
@@ -614,22 +228,7 @@ def train_sequential(
                 for task in main_args.test_tasks:
                     task2runner[task].t_env = t_env
                     for _ in range(n_test_runs):
-                        task2runner[task].run(test_mode=True, pretrain=pretrain)
-
-                # test_pretrain for pretrained tasks
-                if pretrain and test_task2offlinedata is not None:
-                    for task, data_buffer in test_task2offlinedata.items():
-                        episode_sample = data_buffer.sample(batch_size_train * 10)
-
-                        if episode_sample.device != task2args[task].device:
-                            episode_sample.to(task2args[task].device)
-
-                        if hasattr(learner, "test_pretrain"):
-                            learner.test_pretrain(episode_sample, t_env, episode, task)
-                        else:
-                            raise ValueError(
-                                "Do test_pretrain with a learner that does not have a `test_pretrain` method!"
-                            )
+                        task2runner[task].run(test_mode=True)
 
             test_time_total += time.time() - test_start_time
 
@@ -648,10 +247,7 @@ def train_sequential(
             t_env - model_save_time >= main_args.save_model_interval
             or model_save_time == 0
         ):
-            if pretrain:
-                save_path = os.path.join(main_args.pretrain_save_dir, str(t_env))
-            else:
-                save_path = os.path.join(main_args.save_dir, str(t_env))
+            save_path = os.path.join(main_args.save_dir, str(t_env))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
             learner.save_models(save_path)
@@ -661,18 +257,7 @@ def train_sequential(
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
-            max_log_len = max([len(v) for k, v in logger.stats.items()])
 
-            wandb.log(
-                {
-                    "time step": t_env / (len(train_tasks)),
-                    **{
-                        f"{k}": v[-1][1]
-                        for k, v in logger.stats.items()
-                        if len(v) == max_log_len
-                    },
-                }
-            )
 
 
 def run_sequential(args, logger):
@@ -681,10 +266,7 @@ def run_sequential(args, logger):
     # define main_args
     main_args = copy.deepcopy(args)
 
-    if getattr(main_args, "pretrain", False):
-        all_tasks = list(set(args.train_tasks + args.test_tasks + args.pretrain_tasks))
-    else:
-        all_tasks = list(set(args.train_tasks + args.test_tasks))
+    all_tasks = list(set(args.train_tasks + args.test_tasks))
 
     task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess = (
         init_tasks(all_tasks, main_args, logger)
@@ -749,90 +331,7 @@ def run_sequential(args, logger):
         if main_args.evaluate or main_args.save_replay:
             evaluate_sequential(main_args, logger, task2runner)
             return
-        if main_args.attention_heatmap:
-            task2offlinedata = {}
-            for task in main_args.train_tasks:
-                task2offlinedata[task] = OfflineBuffer(
-                    task,
-                    main_args.train_tasks_data_quality[task],
-                    data_folder=main_args.offline_data_name,
-                    offline_data_size=args.offline_data_size,
-                    random_sample=args.offline_data_shuffle,
-                )
-            train_sequential(
-                main_args.train_tasks,
-                main_args,
-                logger,
-                learner,
-                task2args,
-                task2runner,
-                task2offlinedata,
-            )
-            return
-
-    if getattr(main_args, "pretrain", False):
-        # initialize training data for each task
-        task2offlinedata = {}
-        for task in main_args.pretrain_tasks:
-            # create offline data buffer
-
-            task2offlinedata[task] = OfflineBuffer(
-                task,
-                main_args.pretrain_tasks_data_quality[task],
-                data_folder=main_args.offline_data_name,
-                offline_data_size=args.offline_data_size,
-                random_sample=args.offline_data_shuffle,
-            )
-
-        test_task2offlinedata = None
-        # add test data if learner has `test_pretrain` function
-        if hasattr(learner, "test_pretrain") and hasattr(
-            main_args, "test_tasks_data_quality"
-        ):
-            test_task2offlinedata = {}
-            for task in main_args.test_tasks_data_quality.keys():
-                test_task2offlinedata[task] = OfflineBuffer(
-                    task,
-                    main_args.test_tasks_data_quality[task],
-                    data_folder=main_args.offline_data_name,
-                    offline_data_size=args.offline_data_size,
-                    random_sample=args.offline_data_shuffle,
-                )
-
-        logger.console_logger.info(
-            "Beginning pre-training with {} timesteps for each task".format(
-                main_args.pretrain_steps
-            )
-        )
-        train_sequential(
-            main_args.pretrain_tasks,
-            main_args,
-            logger,
-            learner,
-            task2args,
-            task2runner,
-            task2offlinedata,
-            pretrain=True,
-            test_task2offlinedata=test_task2offlinedata,
-        )
-        logger.console_logger.info(f"Finished pretraining")
-        test_task2offlinedata = None  # free memory
-
-        save_path = os.path.join(
-            main_args.pretrain_save_dir, str(main_args.pretrain_steps)
-        )
-        os.makedirs(save_path, exist_ok=True)
-        logger.console_logger.info("Saving models to {}".format(save_path))
-        learner.save_models(save_path)
-
-    elif hasattr(main_args, "pretrain"):
-        # load models from pretrained model directory
-        load_path = os.path.join(
-            main_args.pretrain_save_dir, str(main_args.pretrain_steps)
-        )
-        learner.load_models(load_path)
-        logger.console_logger.info("Load pretrained models from {}".format(load_path))
-
+        
     # initialize training data for each task
     task2offlinedata = {}
     for task in main_args.train_tasks:
@@ -859,7 +358,7 @@ def run_sequential(args, logger):
         task2runner,
         task2offlinedata,
     )
-    wandb.finish()
+
     # save the final model
     if main_args.save_model:
         save_path = os.path.join(main_args.save_dir, str(main_args.t_max))

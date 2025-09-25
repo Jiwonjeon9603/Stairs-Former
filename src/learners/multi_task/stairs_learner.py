@@ -13,7 +13,7 @@ import os
 import wandb
 
 
-class UPDeTBCMixLearner:
+class StairsLearner:
     def __init__(self, mac, logger, main_args):
         self.main_args = main_args
         self.mac = mac
@@ -67,12 +67,6 @@ class UPDeTBCMixLearner:
                 task_args, "pretrain", False
             )
 
-        self.c = main_args.c_step
-        self.skill_dim = main_args.skill_dim
-        self.beta = main_args.beta
-        self.alpha = main_args.coef_conservative
-
-        self.cons_type = main_args.type_conservative
 
         self.current_steps = 0
 
@@ -95,38 +89,6 @@ class UPDeTBCMixLearner:
             raise ValueError("Invalid optimiser type", self.main_args.optim_type)
         self.optimiser.zero_grad()
 
-    # def zero_grad(self):
-    #     self.optimiser.zero_grad()
-
-    # def update(self):
-    #     self.optimiser.step()
-    #     self.optimiser.zero_grad()
-    #     return
-
-    def attention(self, batch: EpisodeBatch, t_env: int, episode_num: int, task: str):
-        # rewards = batch["reward"][:, :]
-        actions = batch["actions"][:, :]
-        terminated = batch["terminated"][:, :].float()
-        mask = batch["filled"][:, :].float()
-        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
-        # avail_actions = batch["avail_actions"]
-
-        mac_out = []
-
-        self.mac.init_hidden(batch.batch_size, task)
-        for t in range(batch.max_seq_length):
-            agent_outs = self.mac.forward(
-                batch, t=t, task=task, token_dropout=self.main_args.token_dropout
-            )
-            mac_out.append(agent_outs)
-        mac_out = th.stack(mac_out, dim=1)
-        end_indices = (terminated == 1).int().argmax(dim=1)
-
-        actions = actions.squeeze(-1)
-        zero_mask = actions == 0
-        first_zero_idx = zero_mask.float().argmax(dim=1)
-        return mac_out, end_indices, first_zero_idx
-
     def train_policy(
         self, batch: EpisodeBatch, t_env: int, episode_num: int, task: str
     ):
@@ -148,45 +110,29 @@ class UPDeTBCMixLearner:
             mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1)  # Concat over time
 
-        mac_out_nd = []
-        self.mac.init_hidden(batch.batch_size, task)
-        for t in range(batch.max_seq_length):
-            agent_outs_nd = self.mac.forward(batch, t=t, task=task, token_dropout=0)
-            mac_out_nd.append(agent_outs_nd)
-        mac_out_nd = th.stack(mac_out_nd, dim=1)
+        with th.no_grad():
+            mac_out_for_target = []
+            self.mac.init_hidden(batch.batch_size, task)
+            for t in range(batch.max_seq_length):
+                target_inputs = self.mac.forward(batch, t=t, task=task, token_dropout=0)
+                mac_out_for_target.append(target_inputs)
+            mac_out_for_target = th.stack(mac_out_for_target, dim=1)
 
-        if self.main_args.bc:
-            b, t, n, a = mac_out.size()
-            bc_loss = (
-                F.cross_entropy(
-                    mac_out.reshape(-1, a),
-                    actions.squeeze(-1).reshape(-1),
-                    reduction="sum",
-                )
-                / mask.sum()
-            ) / n
 
-            bc_loss_nd = (
-                F.cross_entropy(
-                    mac_out_nd.reshape(-1, a),
-                    actions.squeeze(-1).reshape(-1),
-                    reduction="sum",
-                )
-                / mask.sum()
-            ) / n
+        b, t, n, a = mac_out.size()
+        bc_loss = (
+            F.cross_entropy(
+                mac_out.reshape(-1, a),
+                actions.squeeze(-1).reshape(-1),
+                reduction="sum",
+            )
+            / mask.sum()
+        ) / n
 
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_qvals = th.gather(
             mac_out[:, :], dim=3, index=actions[:, :]
-        ).squeeze(
-            3
-        )  # Remove the last dim
-
-        chosen_action_qvals_nd = th.gather(
-            mac_out_nd[:, :], dim=3, index=actions[:, :]
-        ).squeeze(
-            3
-        )  # Remove the last dim
+        ).squeeze(3)  # Remove the last dim
 
         # Calculate the Q-Values necessary for the target
         target_mac_out = []
@@ -205,17 +151,10 @@ class UPDeTBCMixLearner:
 
         # Max over target Q-Values
         if self.main_args.double_q:
-            # Get actions that maximise live Q (for double q-learning)
-            # mac_out_detach = mac_out.clone().detach()
-            # mac_out_detach[avail_actions == 0] = -9999999
-            # cur_max_actions = mac_out_detach[:, :].max(dim=3, keepdim=True)[1]
-
-            mac_out_detach = mac_out_nd.clone().detach()
-            mac_out_detach[avail_actions == 0] = -9999999
-            cur_max_actions = mac_out_detach[:, :].max(dim=3, keepdim=True)[1]
+            mac_out_for_target_detach = mac_out_for_target.clone().detach()
+            mac_out_for_target_detach[avail_actions == 0] = -9999999
+            cur_max_actions = mac_out_for_target_detach[:, :].max(dim=3, keepdim=True)[1]
             target_max_qvals = th.gather(target_mac_out, 3, cur_max_actions).squeeze(3)
-
-            cons_max_qvals = th.gather(mac_out, 3, cur_max_actions).squeeze(3)
         else:
             target_max_qvals = target_mac_out.max(dim=3)[0]
 
@@ -228,43 +167,29 @@ class UPDeTBCMixLearner:
             target_max_qvals = self.target_mixer(
                 target_max_qvals, batch["state"][:, :], self.task2decomposer[task]
             )
-
-            cons_max_qvals = self.mixer(
-                cons_max_qvals, batch["state"][:, :], self.task2decomposer[task]
-            )
+            
 
         # Calculate c-step Q-Learning targets
         targets = (
-            rewards[:, : -self.c]
+            rewards[:, : -1]
             + self.main_args.gamma
-            * (1 - terminated[:, self.c - 1 : -1])
-            * target_max_qvals[:, self.c :]
+            * (1 - terminated[:, :-1])
+            * target_max_qvals[:, 1:]
         )
 
         # Td-error
-        td_error = chosen_action_qvals[:, : -self.c] - targets.detach()
-        td_error_nd = chosen_action_qvals_nd[:, : -self.c] - targets.detach()
+        td_error = chosen_action_qvals[:, : -1] - targets.detach()
 
-        # Cons-error
-        cons_error = cons_max_qvals - chosen_action_qvals
-        # cons_error_nd = cons_max_qvals - chosen_action_qvals
-
-        mask = mask[:, :].expand_as(cons_error)
+        mask = mask[:, :].expand_as(chosen_action_qvals)
 
         # 0-out the targets that came from padded data
-        masked_td_error = td_error * mask[:, : -self.c]
-        masked_td_error_nd = td_error_nd * mask[:, : -self.c]
-        masked_cons_error = cons_error * mask
+        masked_td_error = td_error * mask[:, : -1]
 
         # Normal L2 loss, take mean over actual data
-        td_loss = (masked_td_error**2).sum() / mask[:, : -self.c].sum()
-        td_error_nd = (masked_td_error_nd**2).sum() / mask[:, : -self.c].sum()
-        cons_loss = masked_cons_error.sum() / mask.sum()
+        td_loss = (masked_td_error**2).sum() / mask[:, : -1].sum()
 
-        if self.main_args.bc:
-            loss = td_loss + td_error_nd + bc_loss + bc_loss_nd
-        else:
-            loss = td_loss + self.alpha * cons_loss
+        loss = td_loss + bc_loss
+
 
         # Do RL Learning
         self.optimiser.zero_grad()
@@ -308,7 +233,7 @@ class UPDeTBCMixLearner:
             )
             self.logger.log_stat(
                 f"{task}/target_mean",
-                (targets * mask[:, : -self.c]).sum().item()
+                (targets * mask[:, : -1]).sum().item()
                 / (mask_elems * self.task2args[task].n_agents),
                 t_env,
             )

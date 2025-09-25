@@ -142,16 +142,6 @@ class UPDeTLearner:
                 mac_out_for_target.append(target_inputs)
             mac_out_for_target = th.stack(mac_out_for_target, dim=1)
 
-        if self.main_args.bc:
-            b, t, n, a = mac_out.size()
-            bc_loss = (
-                F.cross_entropy(
-                    mac_out.reshape(-1, a),
-                    actions.squeeze(-1).reshape(-1),
-                    reduction="sum",
-                )
-                / mask.sum()
-            ) / n
 
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_qvals = th.gather(
@@ -231,11 +221,7 @@ class UPDeTLearner:
         td_loss = (masked_td_error**2).sum() / mask[:, : -self.c].sum()
         cons_loss = masked_cons_error.sum() / mask.sum()
 
-        if self.main_args.bc:
-            loss = td_loss + bc_loss
-
-        else:
-            loss = td_loss + self.alpha * cons_loss
+        loss = td_loss + self.alpha * cons_loss
 
         # Do RL Learning
         self.optimiser.zero_grad()
@@ -263,7 +249,6 @@ class UPDeTLearner:
         ):
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/td_loss", td_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/bc_loss", bc_loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             mask_elems = mask.sum().item()
             self.logger.log_stat(
