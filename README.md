@@ -1,7 +1,9 @@
-# STAIRS: Spatio-Temporal Attention with Interleaved Recursive Structure
+# STAIRS-Former: Spatio-Temporal Attention with Interleaved Recursive Structure TransFormer for Offline Mulit-task Multi-agent Reinforcement Learning
 
-This repository provides the official implementation of **STAIRS**, our offline multi-agent reinforcement learning algorithm.  
-The code is adapted from the publicly available [ODIS implementation](https://github.com/LAMDA-RL/ODIS).
+This repository provides the official implementation of **STAIRS-Former** [paper link](https://openreview.net/forum?id=Biz1vpQeLI&referrer=%5BAuthor%20Console%5D(%2Fgroup%3Fid%3DICLR.cc%2F2026%2FConference%2FAuthors%23your-submissions)), our offline multi-agent reinforcement learning algorithm.  
+
+
+And the code is adapted from the publicly available [ODIS implementation](https://github.com/LAMDA-RL/ODIS).
 
 ---
 
